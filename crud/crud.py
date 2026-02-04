@@ -16,6 +16,7 @@ def create_user(db: Session, user: UserModel.UserCreate):
         email=user.email,
         full_name=user.full_name,
         hashed_password=hashed,
+        isSuperUser=user.isSuperUser,
     )
     db.add(db_user)
     db.commit()

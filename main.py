@@ -12,8 +12,37 @@ app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 
 @app.on_event("startup")
 def on_startup():
+    """Create database tables and an initial super user on startup."""
     database.Base.metadata.create_all(bind=database.engine)
+    try:
+        db = database.SessionLocal()
+        admin_user = db.query(models.User).filter(models.User.username == "admin").first()
+        if not admin_user:
+            from crud import crud
+            from schema import UserModel
+            from auth import security
 
+            admin_data = UserModel.UserCreate(
+                username="admin",
+                full_name="Administrator",
+                email="admin@example.com",
+                password="admin123"
+            )
+            hashed_password = security.get_password_hash(admin_data.password)
+            admin_user = models.User(
+                username=admin_data.username,
+                email=admin_data.email,
+                full_name=admin_data.full_name,
+                hashed_password=hashed_password,
+                isSuperUser=True,
+                disabled=False
+            )
+            db.add(admin_user)
+            db.commit()
+            print("Admin user created successfully")
+        db.close()
+    except Exception as e:
+        print(f"Error creating admin user: {e}")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)

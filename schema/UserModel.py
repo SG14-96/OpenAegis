@@ -11,13 +11,14 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    isSuperUser: Optional[bool] = False
 
 
 class User(UserBase):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class Token(BaseModel):
