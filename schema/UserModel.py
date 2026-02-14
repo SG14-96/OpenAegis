@@ -14,8 +14,21 @@ class UserCreate(UserBase):
     isSuperUser: Optional[bool] = False
 
 
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    disabled: Optional[bool] = None
+
+
+class UserPasswordUpdate(BaseModel):
+    current_password: str
+    new_password: str
+
+
 class User(UserBase):
     id: int
+    isSuperUser: bool
 
     class Config:
         from_attributes = True
