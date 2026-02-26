@@ -1,11 +1,32 @@
+import os
 import uvicorn
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from api.v1 import auth, user_management
 from db import database
 from models import models
 
 app = FastAPI()
+
+# Configure CORS
+origins_env = os.getenv("FRONTEND_ORIGINS")
+if origins_env:
+    origins = [o.strip() for o in origins_env.split(",") if o.strip()]
+else:
+    origins = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://localhost:8000",
+    ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(user_management.router, prefix="/api/v1/user_management", tags=["user_management"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 

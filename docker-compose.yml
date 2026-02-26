@@ -1,9 +1,11 @@
-name: openaegis_system
+version: "3.9"
 
 services:
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: openaegis_frontend
     networks:
       - aegis_network
@@ -11,11 +13,14 @@ services:
       - "3000:3000"
     volumes:
       - ./frontend:/frontend
+      - /frontend/node_modules
     depends_on:
       - backend
       - db
   backend:
-    build: ./backend
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: openaegis_backend
     networks:
       - aegis_network
@@ -25,7 +30,7 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - ./backend/.env
     depends_on:
       - db
   db:
@@ -34,13 +39,13 @@ services:
     networks:
       - aegis_network
     environment:
-      - POSTGRES_USER=your_db_user
-      - POSTGRES_PASSWORD=your_db_password
-      - POSTGRES_DB=your_db_name
+      - POSTGRES_USER=openaegis_user
+      - POSTGRES_PASSWORD=secure_password
+      - POSTGRES_DB=openaegis_dev
     ports:
       - "5433:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - /Users/santiagogutierrez/Programming/smarthome/OpenAegis/postgres_data:/var/lib/postgresql/data
 
 networks:
   aegis_network:

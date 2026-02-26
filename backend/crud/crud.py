@@ -3,6 +3,9 @@ from sqlalchemy.orm import Session
 from models import models
 from schema import UserModel
 from auth import security
+from models.models import RefreshToken
+from datetime import datetime
+from typing import Optional
 
 
 def get_user_by_username(db: Session, username: str):
@@ -82,3 +85,26 @@ def delete_user(db: Session, user_id: int):
     db.delete(db_user)
     db.commit()
     return db_user
+
+
+def create_refresh_token(db: Session, user_id: int, token: str, expires_at: Optional[datetime] = None):
+    rt = RefreshToken(token=token, user_id=user_id, expires_at=expires_at)
+    db.add(rt)
+    db.commit()
+    db.refresh(rt)
+    return rt
+
+
+def get_refresh_token(db: Session, token: str):
+    return db.query(RefreshToken).filter(RefreshToken.token == token).first()
+
+
+def revoke_refresh_token(db: Session, token: str):
+    rt = get_refresh_token(db, token)
+    if not rt:
+        return None
+    rt.revoked = True
+    db.add(rt)
+    db.commit()
+    db.refresh(rt)
+    return rt

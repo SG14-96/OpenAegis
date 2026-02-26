@@ -1,10 +1,8 @@
-FROM ubuntu:24.04
+FROM node:22-slim
 
-# install node and app dependencies
-RUN apt-get update && apt-get install -y nodejs npm
 WORKDIR /frontend
 COPY package.json .
 RUN npm install
 COPY . .
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
