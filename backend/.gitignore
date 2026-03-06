@@ -33,6 +33,7 @@ MANIFEST
 *.pyc
 *.pyo
 *.pyd
+venv/*
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
