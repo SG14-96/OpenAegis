@@ -1,12 +1,8 @@
 import type React from "react";
 import useAuth from "../../hooks/useAuth";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card } from "primereact/card";
-import { Button } from "primereact/button";
-import { InputText } from "primereact/inputtext";
-import { Password } from "primereact/password";
-import { useState } from "react";
+import { Card, Button, Input } from "antd";
 
 import "./login_page.css";
 
@@ -14,7 +10,6 @@ export function DemoAuthControls() {
     const { isAuthenticated, user, login, logout } = useAuth();
     const [usernameVal, setUsernameVal] = useState("");
     const [passwordVal, setPasswordVal] = useState("");
-
 
     const handleLogin = async () => {
         try {
@@ -38,13 +33,13 @@ export function DemoAuthControls() {
                         <p>Enter your credentials to sign in.</p>
                         <div className="input-field">
                             <label htmlFor="username">Username</label>
-                            <InputText id="username" value={usernameVal} onChange={(e) => setUsernameVal(e.target.value)} aria-describedby="username-help" style={{ width: '100%' }} />
+                            <Input id="username" value={usernameVal} onChange={(e) => setUsernameVal(e.target.value)} style={{ width: '100%' }} />
                         </div>
                         <div className="input-field" style={{ marginTop: "1em" }}>
                             <label htmlFor="password">Password</label>
-                            <Password value={passwordVal} onChange={(e) => setPasswordVal(e.target.value)} feedback={false} tabIndex={1} style={{ width: '100%' }} />
+                            <Input.Password id="password" value={passwordVal} onChange={(e) => setPasswordVal(e.target.value)} style={{ width: '100%' }} />
                         </div>
-                        <Button style={{ marginTop: "1em" }} label="Sign in" onClick={handleLogin} />
+                        <Button style={{ marginTop: "1em" }} type="primary" onClick={handleLogin}>Sign in</Button>
                     </div>
                 )}
             </div>

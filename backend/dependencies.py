@@ -41,3 +41,12 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 def is_super_user(current_user: models.User):
     return current_user.isSuperUser
+
+
+def require_super_user(current_user: models.User = Depends(get_current_user)):
+    if not current_user.isSuperUser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operation not permitted. Admin access required.",
+        )
+    return current_user

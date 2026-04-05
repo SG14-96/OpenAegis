@@ -3,10 +3,12 @@ from typing import Optional
 
 
 class UserBase(BaseModel):
+    user_uuid: str
     username: str
     email: Optional[str] = None
     full_name: Optional[str] = None
     disabled: Optional[bool] = False
+    isSuperUser: Optional[bool] = False
 
 
 class UserCreate(UserBase):
@@ -27,7 +29,6 @@ class UserPasswordUpdate(BaseModel):
 
 
 class User(UserBase):
-    id: int
     isSuperUser: bool
 
     class Config:
