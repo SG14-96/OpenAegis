@@ -9,6 +9,14 @@ from alembic import context
 # access to the values within the .ini file in use.
 config = context.config
 
+# Override sqlalchemy.url with DATABASE_URL env var when present so that
+# running alembic directly (outside Docker) respects the same setting as
+# the application itself.
+import os  # noqa: E402
+_db_url = os.getenv("DATABASE_URL")
+if _db_url:
+    config.set_main_option("sqlalchemy.url", _db_url)
+
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
@@ -16,9 +24,14 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
-target_metadata = None
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from db.database import Base
+import models.models  # noqa: F401 — ensure all models are registered
+
+target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

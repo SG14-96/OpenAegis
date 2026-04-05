@@ -2,8 +2,9 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from jose import jwt
 from typing import Optional
+import os
 
-SECRET_KEY = "CHANGE_ME_REPLACE_WITH_RANDOM_SECRET"
+SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_ME_REPLACE_WITH_RANDOM_SECRET")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
@@ -40,3 +41,8 @@ def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) 
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+
+def change_password(user, new_password: str):
+    """Update the user's password with a hashed version."""
+    user.hashed_password = get_password_hash(new_password)

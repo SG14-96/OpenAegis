@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 
 from crud import crud
 from auth import security
-from dependencies import get_db
+from dependencies import get_db, get_current_user
 from schema import UserModel
+from models.models import User
 from jose import JWTError
 
 router = APIRouter()
