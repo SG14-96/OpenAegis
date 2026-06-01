@@ -1,11 +1,20 @@
+import logging
 import os
+from pathlib import Path
 import uvicorn
 from fastapi import FastAPI
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    force=True,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from alembic.config import Config
 from alembic import command
 
-from api.v1 import auth, user, admin, alarm
+from api.v1 import auth, user, admin, alarm, hardware
 from db import database
 from models import models
 
@@ -29,10 +38,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.mount(
+    "/static/plugins",
+    StaticFiles(directory=Path(__file__).parent / "plugins"),
+    name="plugin_assets",
+)
+
 app.include_router(user.router, prefix="/api/v1/users", tags=["users"])
 app.include_router(admin.router, prefix="/api/v1/admin/users", tags=["admin"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(alarm.router, prefix="/api/v1/alarm", tags=["alarm"])
+app.include_router(hardware.router, prefix="/api/v1/hardware", tags=["hardware"])
 
 
 @app.on_event("startup")
@@ -79,13 +95,11 @@ async def on_startup():
     app.state.alarm_state = AlarmState()
     app.state.ws_manager = WSManager()
     app.state.alarm_manager = AlarmManager(app.state.alarm_state, app.state.ws_manager)
-    app.state.alarm_manager.start()
 
 
 @app.on_event("shutdown")
 async def on_shutdown():
-    if hasattr(app.state, "alarm_manager"):
-        app.state.alarm_manager.stop()
+    database.engine.dispose()
 
 
 if __name__ == "__main__":

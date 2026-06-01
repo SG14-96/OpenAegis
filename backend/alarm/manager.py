@@ -1,8 +1,11 @@
 from __future__ import annotations
 import asyncio
 import importlib
+import importlib.metadata
 import logging
-from typing import TYPE_CHECKING
+import subprocess
+import sys
+from typing import TYPE_CHECKING, Callable
 
 from alarm.state import AlarmState, ArmState, PartitionState, ZoneState
 from alarm.events import AlarmEvent
@@ -13,7 +16,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_POLL_INTERVAL = 0.05  # seconds
+
+class PluginLoadError(Exception):
+    """Raised when a plugin's on_load raises — includes the plugin name and root cause."""
+    def __init__(self, plugin_name: str, cause: Exception) -> None:
+        self.plugin_name = plugin_name
+        self.cause = cause
+        super().__init__(f"Plugin '{plugin_name}' failed to load: {cause}")
 
 
 class AlarmManager:
@@ -21,47 +30,102 @@ class AlarmManager:
         self._state = state
         self._ws = ws_manager
         self._plugins: dict[str, AlarmInterface] = {}
-        self._task: asyncio.Task | None = None
-
-    # ------------------------------------------------------------------ #
-    #  Lifecycle                                                           #
-    # ------------------------------------------------------------------ #
-
-    def start(self) -> None:
-        """Schedule the outbox-poll loop. Must be called after the event loop is running."""
-        self._task = asyncio.create_task(self._poll_loop())
-        logger.info("AlarmManager poll loop started.")
-
-    def stop(self) -> None:
-        if self._task:
-            self._task.cancel()
-            self._task = None
-        logger.info("AlarmManager poll loop stopped.")
 
     # ------------------------------------------------------------------ #
     #  Plugin management                                                   #
     # ------------------------------------------------------------------ #
 
-    def load_plugin(self, module_path: str) -> str:
+    def load_plugin(self, module_path: str, setup_values: dict | None = None) -> str:
         """
-        Dynamically load a plugin from *module_path* (e.g. "plugins.DSC").
+        Dynamically load a plugin from *module_path*
+        (e.g. "plugins.DSC.IT_100_Integration_Module").
 
         The target module must expose a PLUGIN_CLASS attribute pointing to an
         AlarmInterface subclass. Returns the plugin name from its manifest.
+
+        Any packages listed in the manifest's `dependencies` field that are not
+        already installed will be pip-installed before the plugin is instantiated.
         """
+        from pathlib import Path
+        from schema.PluginManifest import PluginManifest
+
         mod = importlib.import_module(module_path)
-        plugin: AlarmInterface = mod.PLUGIN_CLASS()
-        manifest = plugin.on_load()
+
+        manifest_path = Path(mod.__file__).parent / "manifest.json"
+        if not manifest_path.exists():
+            raise FileNotFoundError(f"No manifest.json found for plugin '{module_path}'")
+        manifest = PluginManifest.from_file(manifest_path)
+
+        if manifest.dependencies:
+            self._install_deps(manifest.dependencies)
+
+        plugin_cls = getattr(mod, 'PLUGIN_CLASS', None)
+        if plugin_cls is None:
+            plugin_mod = importlib.import_module(f"{module_path}.plugin")
+            plugin_cls = getattr(plugin_mod, 'PLUGIN_CLASS', None)
+        if plugin_cls is None:
+            raise AttributeError(
+                f"Plugin '{module_path}' does not expose PLUGIN_CLASS in its "
+                "__init__.py or plugin.py."
+            )
+        plugin: AlarmInterface = plugin_cls()
         plugin.manifest = manifest
-        name = manifest.name
-        self._plugins[name] = plugin
-        self._state.active_plugin = name
+        try:
+            plugin.on_load(setup_values)
+        except Exception as exc:
+            logger.error("Plugin '%s' on_load failed: %s", manifest.name, exc)
+            try:
+                plugin.on_unload()
+            except Exception:
+                logger.exception("Plugin '%s' on_unload raised during cleanup", manifest.name)
+            raise PluginLoadError(manifest.name, exc) from exc
+
+        plugin.set_message_handler(self._make_handler(manifest.name))
+        self._plugins[manifest.name] = plugin
+        self._state.active_plugin = manifest.name
+
         logger.info("Plugin loaded: %s v%s", manifest.name, manifest.version)
-        return name
+        return manifest.name
+
+    def _make_handler(self, plugin_name: str) -> Callable[[dict], None]:
+        """
+        Returns a thread-safe callback that schedules _handle_plugin_message
+        on the running event loop. Safe to call from background threads.
+        """
+        loop = asyncio.get_event_loop()
+
+        def handler(msg: dict) -> None:
+            asyncio.run_coroutine_threadsafe(
+                self._handle_plugin_message(plugin_name, msg), loop
+            )
+
+        return handler
+
+    def _install_deps(self, deps: list[str]) -> None:
+        """Install any pip packages from *deps* that are not already present."""
+        import re
+        installed = {
+            d.metadata["Name"].lower()
+            for d in importlib.metadata.distributions()
+        }
+        # Extract the bare package name from specifiers like "pyserial>=3.5"
+        to_install = [
+            dep for dep in deps
+            if re.split(r"[><=!~\[;]", dep)[0].strip().lower() not in installed
+        ]
+        if not to_install:
+            return
+        logger.info("Installing plugin dependencies: %s", to_install)
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--quiet", *to_install]
+        )
+        # Invalidate the metadata cache so newly installed packages are visible
+        importlib.invalidate_caches()
 
     def unload_plugin(self, name: str) -> None:
         plugin = self._plugins.pop(name, None)
         if plugin:
+            plugin.set_message_handler(None)
             plugin.on_unload()
             if self._state.active_plugin == name:
                 self._state.active_plugin = None
@@ -78,22 +142,18 @@ class AlarmManager:
     def loaded_plugins(self) -> list[str]:
         return list(self._plugins.keys())
 
+    @property
+    def list_available_plugins(self) -> list[dict]:
+        from plugins.discovery import discover_plugins
+        return discover_plugins()
+
+    @property
+    def active_plugin(self) -> str | None:
+        return self._state.active_plugin
+
     # ------------------------------------------------------------------ #
     #  Internal message handling                                           #
     # ------------------------------------------------------------------ #
-
-    async def _poll_loop(self) -> None:
-        while True:
-            try:
-                for name, plugin in list(self._plugins.items()):
-                    messages = plugin.drain_outbox()
-                    for msg in messages:
-                        await self._handle_plugin_message(name, msg)
-            except asyncio.CancelledError:
-                break
-            except Exception:
-                logger.exception("Error in AlarmManager poll loop")
-            await asyncio.sleep(_POLL_INTERVAL)
 
     async def _handle_plugin_message(self, source: str, msg: dict) -> None:
         event_type = msg.get("type")

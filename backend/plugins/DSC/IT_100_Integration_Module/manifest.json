@@ -1,0 +1,55 @@
+{
+    "name": "DSC IT-100 Integration Module",
+    "version": "1.0.0",
+    "description": "Integrates DSC IT-100 alarm panels with OpenAegis.",
+    "author": "Santiago Gutierrez",
+    "connectionType": "serial",
+    "connectionSetupSteps": [
+        {
+            "step": "Connect the IT-100 module to your server via USB.",
+            "details": "Ensure the device is recognized and note the serial port (e.g., /dev/ttyUSB0).",
+            "autoDiscoveryResults": []
+        },
+        {
+            "step": "Configure the serial port settings.",
+            "details": "Set the baud rate to one of the following options (default: 9600):",
+            "options": [
+                {
+                    "label": "9600",
+                    "value": 9600
+                },
+                {
+                    "label": "19200",
+                    "value": 19200
+                },
+                {
+                    "label": "38400",
+                    "value": 38400
+                },
+                {
+                    "label": "57600",
+                    "value": 57600
+                },
+                {
+                    "label": "115200",
+                    "value": 115200
+                }
+            ]
+        },
+        {
+            "step": "Provide the code you would like to use to arm/disarm the system from OpenAegis.",
+            "details": "This code will be used for arm/disarm commands sent from OpenAegis. Make sure to use a valid user code that has the necessary permissions on your DSC panel.",
+            "input": {
+                "type": "integer",
+                "placeholder": "Enter arm/disarm code"
+            }
+        },
+        {
+            "step": "Save and start the plugin.",
+            "details": "The plugin will attempt to connect to the IT-100 module using the provided settings."
+        }
+    ],
+    "dependencies": [
+        "py-dsc-it100>=1.0.0"
+    ]
+}

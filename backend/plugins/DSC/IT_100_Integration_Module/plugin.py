@@ -1,6 +1,5 @@
 import logging
 from plugins.AlarmInterface import AlarmInterface
-from schema.AlarmPluginManifest import AlarmPluginManifest
 from alarm.events import AlarmEvent
 from .dsc_it100 import IT100, PANIC_FIRE, PANIC_AMBULANCE, PANIC_PANIC
 from .commands import IT100_COMMANDS
@@ -13,43 +12,14 @@ class DSCIntegrationModule(AlarmInterface):
     def __init__(self) -> None:
         super().__init__()
         self._panel: IT100 | None = None
+        self._setup_values: dict = {}
 
     # ------------------------------------------------------------------ #
     #  Lifecycle                                                           #
     # ------------------------------------------------------------------ #
 
-    def on_load(self) -> AlarmPluginManifest:
-        return AlarmPluginManifest(
-            name="DSC IT-100 Integration Module",
-            version="1.0.0",
-            description="Integrates DSC IT-100 alarm panels with OpenAegis.",
-            author="Santiago Gutierrez",
-            connectionType="serial",
-            connectionSetupSteps=[
-                {
-                    "step": "Connect the IT-100 module to your server via USB.",
-                    "details": "Ensure the device is recognized and note the serial port (e.g., /dev/ttyUSB0).",
-                    "options": [
-                        {"label": "Auto-detect", "value": "auto"},
-                        {"label": "Manual entry", "value": "manual"}
-                    ]
-                },
-                {
-                    "step": "Configure the serial port settings.",
-                    "details": "Set the baud rate to one of the following options (default: 9600):",
-                    "options": [9600, 19200, 38400, 57600, 115200]
-                },
-                {
-                    "step": "Provide the code you would like to use to arm/disarm the system from OpenAegis.",
-                    "details": "This code will be used for arm/disarm commands sent from OpenAegis. Make sure to use a valid user code that has the necessary permissions on your DSC panel."
-                },
-                {
-                    "step": "Save and start the plugin.",
-                    "details": "The plugin will attempt to connect to the IT-100 module using the provided settings."
-                }
-            ],
-            capabilities=IT100_COMMANDS
-        )
+    def on_load(self, setup_values: dict | None = None) -> None:
+        self._setup_values = setup_values or {}
 
     def on_unload(self) -> None:
         if self._panel:
@@ -156,6 +126,26 @@ class DSCIntegrationModule(AlarmInterface):
         else:
             logger.warning("DSC plugin received unknown command type: %r", msg_type)
 
+    def send(self, message: dict) -> None:
+        """
+        Module → Host.
+        The module calls this internally to post a message to the host.
+        Thread-safe: can be called from background threads.
+
+        Outgoing messages must include a "type" key. Supported types:
+
+          zone_open           zone_id: int, label: str (optional)
+          zone_closed         zone_id: int
+          zone_bypassed       zone_id: int, bypassed: bool
+          partition_armed     partition_id: int, mode: "stay"|"away"
+          partition_disarmed  partition_id: int
+          alarm_triggered     partition_id: int, zone_id: int (optional)
+          alarm_restored      partition_id: int, zone_id: int (optional)
+          alarm_panicked      partition_id: int, panic_type: str, panicked: bool
+          error               detail: str
+          ready               (none)
+        """
+        super().send(message)
     # ------------------------------------------------------------------ #
     #  Internal helpers                                                    #
     # ------------------------------------------------------------------ #

@@ -1,0 +1,14 @@
+{
+    "name": "Simulated Alarm",
+    "version": "1.0.0",
+    "description": "A software-only alarm simulator for development and testing. No hardware required.",
+    "author": "OpenAegis",
+    "connectionType": "other",
+    "connectionSetupSteps": [
+        {
+            "step": "Start the simulator",
+            "details": "No hardware or configuration is required. Click Initialize to start the simulated alarm system."
+        }
+    ],
+    "dependencies": []
+}
