@@ -1,5 +1,6 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Depends
-from alarm.manager import AlarmManager
+from pydantic import BaseModel
+from alarm.manager import AlarmManager, PluginLoadError
 from alarm.ws_manager import WSManager
 from alarm.state import AlarmState
 from dependencies import get_current_user
@@ -30,11 +31,59 @@ def _get_state(request: Request) -> AlarmState:
 async def get_state(state: AlarmState = Depends(_get_state), _=Depends(get_current_user)):
     return state.model_dump()
 
-
 @router.get("/plugins")
 async def list_plugins(manager: AlarmManager = Depends(_get_manager), _=Depends(get_current_user)):
     return {"plugins": manager.loaded_plugins}
 
+@router.get("/plugins/available")
+async def list_available_plugins(manager: AlarmManager = Depends(_get_manager), _=Depends(get_current_user)):
+    return {"plugins": manager.list_available_plugins}
+
+class LoadPluginRequest(BaseModel):
+    module_path: str
+    setup_values: dict | None = None
+
+
+@router.post("/plugins/load")
+async def load_plugin(
+    body: LoadPluginRequest,
+    manager: AlarmManager = Depends(_get_manager),
+    _=Depends(get_current_user),
+):
+    try:
+        plugin_name = manager.load_plugin(body.module_path, body.setup_values)
+        return {"status": "loaded", "plugin": plugin_name}
+    except PluginLoadError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "plugin_load_failed", "plugin": exc.plugin_name, "reason": str(exc.cause)},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+        
+@router.post("/plugins/unload")
+async def unload_plugin(
+    plugin_name: str,
+    manager: AlarmManager = Depends(_get_manager),
+    _=Depends(get_current_user),
+):
+    try:
+        manager.unload_plugin(plugin_name)
+        return {"status": "unloaded", "plugin": plugin_name}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+@router.post("/plugins/get_current_plugin")
+async def get_current_plugin(
+    manager: AlarmManager = Depends(_get_manager),
+    _=Depends(get_current_user),
+):
+    try:
+        plugin = manager.active_plugin()
+        return {"plugin": plugin.model_dump()}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    
 
 @router.post("/command/{plugin_name}")
 async def send_command(

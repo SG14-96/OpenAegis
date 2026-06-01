@@ -8,5 +8,10 @@ RUN pip3 install --break-system-packages -r requirements.txt
 WORKDIR /app
 COPY . .
 
+# Install dependencies declared by each plugin
+RUN find plugins -name requirements.txt \
+    -exec pip3 install --break-system-packages -r {} \;
+
 ENV ENV_FILE=.env
-CMD ["uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
+ENV PYTHONUNBUFFERED=1
+CMD ["uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "8000", "--log-level", "info"]

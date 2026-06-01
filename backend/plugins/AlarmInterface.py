@@ -1,14 +1,8 @@
-"""
-AlarmInterface.py
------------------
-Defines the AlarmInterface class, which serves as an abstract base class for alarm plugins.
-This interface specifies the methods that any alarm plugin must implement to be compatible with the system.
-The AlarmInterface ensures that all alarm plugins provide a consistent way to trigger alarms and handle alarm-related functionality.
-"""
-
-import queue
 from abc import ABC, abstractmethod
-from schema.AlarmPluginManifest import AlarmPluginManifest
+from typing import Callable, Optional
+
+from schema.PluginManifest import PluginManifest
+
 
 class AlarmInterface(ABC):
     """
@@ -16,28 +10,30 @@ class AlarmInterface(ABC):
 
     Communication model
     -------------------
-    Host → Module : host calls `receive(message)` on the module instance.
-    Module → Host : module calls `self.send(message)` internally; the host
-                    drains `module.outbox` whenever it likes.
+    Host → Plugin : host calls `receive(message)` on the plugin instance.
+    Plugin → Host : plugin calls `self.send(message)`; the host registers a
+                    handler via `set_message_handler` which is invoked immediately
+                    on each outgoing message — no polling, no queue.
 
-    A message is any JSON-serialisable dict, but the only required key is
-    "type" (a string), which lets the host route messages without inspecting
-    the full payload.
-
+    A message is any JSON-serializable dict with a required "type" key.
     """
 
     def __init__(self) -> None:
-        # Module → Host outbox; the host reads from this queue.
-        self.outbox: queue.Queue[dict] = queue.Queue()
+        self._message_handler: Optional[Callable[[dict], None]] = None
         self._running: bool = False
-        self.manifest: AlarmPluginManifest = None
+        self.manifest: Optional[PluginManifest] = None
 
     # ------------------------------------------------------------------ #
     #  Lifecycle hooks (optional to override)                              #
     # ------------------------------------------------------------------ #
 
-    def on_load(self) -> AlarmPluginManifest:
-        """Called once right after the module is instantiated by the loader."""
+    def on_load(self, setup_values: dict | None = None) -> None:
+        """Called once after the plugin is instantiated.
+
+        setup_values contains the user's wizard configuration keyed by step index.
+        Use it to configure the connection (port, baud rate, credentials, etc.).
+        The manifest is already set on self.manifest before this is called.
+        """
 
     def on_unload(self) -> None:
         """Called just before the module is removed from the loader."""
@@ -49,30 +45,22 @@ class AlarmInterface(ABC):
     @abstractmethod
     def receive(self, message: dict) -> None:
         """
-        Host → Module.
-        The host calls this to push a message into the module.
+        Host → Plugin.
+        The host calls this to push a command into the plugin.
         Must not block; do heavy work in a background thread if needed.
         """
 
     def send(self, message: dict) -> None:
         """
-        Module → Host.
-        The module calls this internally to post a message to the host.
+        Plugin → Host.
+        The plugin calls this to deliver a message to the host immediately.
         Thread-safe: can be called from background threads.
         """
         if "type" not in message:
             raise ValueError("Every outgoing message must include a 'type' key.")
-        self.outbox.put(message)
+        if self._message_handler is not None:
+            self._message_handler(message)
 
-    def drain_outbox(self) -> list[dict]:
-        """
-        Convenience helper: returns all pending outgoing messages as a list.
-        The host can call this instead of reading the queue directly.
-        """
-        messages = []
-        while not self.outbox.empty():
-            try:
-                messages.append(self.outbox.get_nowait())
-            except queue.Empty:
-                break
-        return messages
+    def set_message_handler(self, handler: Callable[[dict], None]) -> None:
+        """Registered by the host after loading; routes send() calls to the manager."""
+        self._message_handler = handler
