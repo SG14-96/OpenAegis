@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from db.database import Base
 import models.models  # noqa: F401 — ensure all models are registered
+import models.settings  # noqa: F401
 
 target_metadata = Base.metadata
 

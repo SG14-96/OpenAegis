@@ -54,7 +54,6 @@ export const useAppStore = create<AppStore>()(
         user: s.user,
         accessToken: s.accessToken,
         refreshToken: s.refreshToken,
-        activePlugin: s.activePlugin,
       }),
     }
   )

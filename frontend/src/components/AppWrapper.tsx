@@ -29,12 +29,6 @@ const AppWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       onClick: () => navigate("/notifications"),
     },
     {
-      key: "activity",
-      label: "Activity",
-      icon: <FileOutlined />,
-      onClick: () => navigate("/logs"),
-    },
-    {
       key: "settings",
       label: "Settings",
       icon: <SettingOutlined />,

@@ -1,22 +1,31 @@
 import logging
 import os
 from pathlib import Path
+
 import uvicorn
+from alembic import command
+from alembic.config import Config
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from alarm.manager import AlarmManager
+from alarm.ws_manager import WSManager
+from api.v1 import auth, user, admin, alarm, hardware
+from auth import security
+from crud import crud
+from db import database
+from models.models import User
+import models.settings  # noqa: F401 — register ORM models before any query
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     force=True,
 )
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from alembic.config import Config
-from alembic import command
 
-from api.v1 import auth, user, admin, alarm, hardware
-from db import database
-from models import models
+# ENV variables:
+APP_IN_DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
 
 app = FastAPI()
 
@@ -53,48 +62,51 @@ app.include_router(hardware.router, prefix="/api/v1/hardware", tags=["hardware"]
 
 @app.on_event("startup")
 async def on_startup():
+    """Run Alembic migrations, seed the initial super user, and wire the alarm subsystem."""
     try:
-        """Run Alembic migrations and seed the initial super user on startup."""
         alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
         command.upgrade(alembic_cfg, "head")
         
-        db = database.SessionLocal()
-        admin_user = db.query(models.User).filter(models.User.username == "admin").first()
-        if not admin_user:
-            from crud import crud
-            from schema import UserModel
-            from auth import security
-
-            admin_data = UserModel.UserCreate(
-                username="admin",
-                full_name="Administrator",
-                email="admin@example.com",
-                password="admin123"
-            )
-            hashed_password = security.get_password_hash(admin_data.password)
-            admin_user = models.User(
-                username=admin_data.username,
-                email=admin_data.email,
-                full_name=admin_data.full_name,
-                hashed_password=hashed_password,
-                isSuperUser=True,
-                disabled=False
-            )
-            db.add(admin_user)
+        if APP_IN_DEV_MODE:
+            db = database.SessionLocal()
+            dev_users = [
+                {"username": "admin",   "full_name": "Administrator",  "email": "admin@example.com",   "password": "admin123",   "isSuperUser": True},
+                {"username": "admin2",  "full_name": "Admin Two",       "email": "admin2@example.com",  "password": "admin123",   "isSuperUser": True},
+                {"username": "alice",   "full_name": "Alice Smith",     "email": "alice@example.com",   "password": "password123","isSuperUser": False},
+                {"username": "bob",     "full_name": "Bob Johnson",     "email": "bob@example.com",     "password": "password123","isSuperUser": False},
+                {"username": "carol",   "full_name": "Carol Williams",  "email": "carol@example.com",   "password": "password123","isSuperUser": False},
+                {"username": "dave",    "full_name": "Dave Brown",      "email": "dave@example.com",    "password": "password123","isSuperUser": False},
+            ]
+            for u in dev_users:
+                exists = db.query(User).filter(User.username == u["username"]).first()
+                if not exists:
+                    db.add(User(
+                        username=u["username"],
+                        email=u["email"],
+                        full_name=u["full_name"],
+                        hashed_password=security.get_password_hash(u["password"]),
+                        isSuperUser=u["isSuperUser"],
+                        disabled=False,
+                    ))
+                    print(f"Dev user '{u['username']}' created")
+                else:
+                    print(f"Dev user '{u['username']}' already exists")
             db.commit()
-            print("Admin user created successfully")
-        db.close()
+            db.close()
     except Exception as e:
-        print(f"Error creating admin user: {e}")
+        print(f"Error during startup: {e}")
 
     # Wire up alarm subsystem
-    from alarm.state import AlarmState
-    from alarm.ws_manager import WSManager
-    from alarm.manager import AlarmManager
-
-    app.state.alarm_state = AlarmState()
     app.state.ws_manager = WSManager()
-    app.state.alarm_manager = AlarmManager(app.state.alarm_state, app.state.ws_manager)
+    app.state.alarm_manager = AlarmManager(app.state.ws_manager)
+
+    # Restore the active plugin and alarm state from the last saved configuration.
+    restore_db = database.SessionLocal()
+    try:
+        await app.state.alarm_manager.restore_from_config(restore_db)
+    finally:
+        print("Alarm state restoration complete.")
+        restore_db.close()
 
 
 @app.on_event("shutdown")

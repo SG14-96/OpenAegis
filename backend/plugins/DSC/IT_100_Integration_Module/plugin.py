@@ -66,7 +66,9 @@ class DSCIntegrationModule(AlarmInterface):
         elif msg_type == "poll":
             self._require_panel().poll()
 
-        elif msg_type == "status_request":
+        elif msg_type in ("status", "status_request"):
+            # "status" is the canonical manager command; "status_request" is the
+            # legacy IT-100 name — both trigger a full panel state broadcast.
             self._require_panel().request_status()
 
         elif msg_type == "arm_away":
@@ -86,18 +88,22 @@ class DSCIntegrationModule(AlarmInterface):
 
         elif msg_type == "disarm":
             self._require_panel().disarm(
-                partition=message["partition"],
-                code=message["code"],
+                partition=message.get("partition", 1),
+                # Accept canonical "user_code" or legacy "code"
+                code=message.get("user_code") or message.get("code", ""),
             )
 
-        elif msg_type == "trigger_panic":
+        elif msg_type in ("panic", "trigger_panic"):
+            # "panic" is the canonical manager command; "trigger_panic" is the legacy name.
             _panic_map = {
                 "fire":       PANIC_FIRE,
                 "ambulance":  PANIC_AMBULANCE,
                 "panic":      PANIC_PANIC,
+                "police":     PANIC_PANIC,
+                "medical":    PANIC_AMBULANCE,
             }
-            panic_type = _panic_map.get(message.get("panic_type", "panic"), PANIC_PANIC)
-            self._require_panel().trigger_panic(panic_type)
+            raw = message.get("panic_type", "panic")
+            self._require_panel().trigger_panic(_panic_map.get(raw, PANIC_PANIC))
 
         elif msg_type == "key_press":
             self._require_panel().key_press(
@@ -107,8 +113,9 @@ class DSCIntegrationModule(AlarmInterface):
 
         elif msg_type == "bypass_zone":
             self._require_panel().bypass_zone(
-                zone=message["zone"],
-                code=message.get("code"),
+                # Accept canonical "zone_id" or legacy "zone"
+                zone=message.get("zone_id") or message.get("zone"),
+                code=message.get("user_code") or message.get("code"),
             )
 
         elif msg_type == "set_time_stamp":
