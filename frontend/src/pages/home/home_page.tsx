@@ -1,4 +1,8 @@
+import React from "react";
+import { useAppStore } from "../../store/appStore";
+
 const HomePage = () => {
+  const { activePlugin } = useAppStore();
   return (
     <div>
       <h1>Welcome to OpenAegis</h1>

@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional
 
-
+# Full User model with all fields, including optional ones
 class UserBase(BaseModel):
     user_uuid: str
     username: str
@@ -11,9 +11,11 @@ class UserBase(BaseModel):
     isSuperUser: Optional[bool] = False
 
 
-class UserCreate(UserBase):
+class UserCreate(BaseModel):
+    username: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
     password: str
-    isSuperUser: Optional[bool] = False
 
 
 class UserUpdate(BaseModel):

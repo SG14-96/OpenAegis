@@ -32,7 +32,6 @@ function asyncInit<T>(): AsyncState<T> {
 
 export const InformationTab: React.FC = () => {
   const [userInfo, setUserInfo] = useState<AsyncState<User>>(asyncInit);
-  const { activePlugin } = useAppStore();
 
   useEffect(() => {
     setUserInfo({ data: null, isLoading: true, error: null });
