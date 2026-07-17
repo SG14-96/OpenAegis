@@ -1,8 +1,12 @@
+import { Typography } from "antd";
+
+const { Title, Paragraph } = Typography;
+
 const NotificationsPage = () => {
   return (
     <div>
-      <h1>Notifications</h1>
-      <p>This is where you can view your notifications.</p>
+      <Title level={1}>Notifications</Title>
+      <Paragraph>This is where you can view your notifications.</Paragraph>
     </div>
   );
 };

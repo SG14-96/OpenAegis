@@ -38,7 +38,10 @@ const AppWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   return (
     <div className="app-wrapper">
-      <div style={{ display: "flex", alignItems: "center", gap: "1em" }}>
+      <div
+        className="app-wrapper-nav"
+        style={{ display: "flex", alignItems: "center", gap: "1em" }}
+      >
         <img
           alt="logo"
           src={Shield}
@@ -60,7 +63,7 @@ const AppWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           Sign out
         </Button>
       </div>
-      {children}
+      <div className="app-wrapper-content">{children}</div>
     </div>
   );
 };

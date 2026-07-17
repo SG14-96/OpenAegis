@@ -1,5 +1,7 @@
 import React from "react";
-import Card from "antd/lib/card";
+import { Card, Typography } from "antd";
+
+const { Text } = Typography;
 
 interface PluginModelCardProps {
   model: PluginModel;
@@ -20,8 +22,10 @@ export const PluginModelCard: React.FC<PluginModelCardProps> = ({
           gap: 8,
         }}
       >
-        <span style={{ fontSize: 14, fontWeight: 500 }}>{model.name}</span>
-        <span style={{ fontSize: 12, color: "#9ca3af" }}>{model.module_path}</span>
+        <Text style={{ fontSize: 14, fontWeight: 500 }}>{model.name}</Text>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {model.module_path}
+        </Text>
       </div>
     </Card>
   );

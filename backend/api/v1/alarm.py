@@ -1,4 +1,5 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from schema.settings import AlarmCreateRequestBody, AlarmUpdateRequestBody
@@ -178,10 +179,14 @@ async def websocket_endpoint(ws: WebSocket):
             data: dict = await ws.receive_json()
             try:
                 payload = CommandPayload(**data)
+            except ValidationError:
+                # Not a recognized alarm command — accept it as raw client data.
+                await ws.send_json({"status": "received", "data": data})
+                continue
+
+            try:
                 alarm_manager.dispatch_command(payload)
-            except (RuntimeError, ValueError) as exc:
-                await ws.send_text(f'{{"error": "{exc}"}}')
-            except Exception as exc:
-                await ws.send_text(f'{{"error": "Invalid command payload: {exc}"}}')
+            except RuntimeError as exc:
+                await ws.send_json({"error": str(exc)})
     except WebSocketDisconnect:
         ws_manager.disconnect(ws)

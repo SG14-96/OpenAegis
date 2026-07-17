@@ -286,13 +286,13 @@ export const PluginsTab: React.FC = () => {
                 onCancel={() => setSetupModalVisible(false)}
               >
                 <div className="plugin-setup-subview">
-                  <h2 className="text-2xl font-semibold mb-4">
+                  <Typography.Title level={2} style={{ marginBottom: 16 }}>
                     Install {selectedModel.manifest?.name}
-                  </h2>
-                  <p className="mb-6 text-gray-600">
+                  </Typography.Title>
+                  <Typography.Paragraph type="secondary" style={{ marginBottom: 24 }}>
                     This will install the plugin "{selectedModel.manifest?.name}
                     " please follow the instructions provided to setup.
-                  </p>
+                  </Typography.Paragraph>
                 </div>
               </Modal>
               {isCurrentPluginActive && (
@@ -337,7 +337,9 @@ export const PluginsTab: React.FC = () => {
               <div>
                 {isCurrentPluginActive ? (
                   <div>
-                    <p>Plugin is currently loaded and being used.</p>
+                    <Typography.Paragraph>
+                      Plugin is currently loaded and being used.
+                    </Typography.Paragraph>
                   </div>
                 ) : (
                   <Button

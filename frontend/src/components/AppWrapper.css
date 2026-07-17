@@ -1,13 +1,29 @@
 .app-wrapper {
-    border: 1px solid #e0e0e0;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    border-radius: 15px;
-    padding: 1em;
-    background-color: #ffffff;
-    /* take 75% of viewport and center */
-    width: 60vw;
-    height: 75vh;
-    margin: auto;
-    display: flex;
-    flex-direction: column;
+  border: 1px solid #e0e0e0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 15px;
+  padding: 1em;
+  background-color: #ffffff;
+  width: 60vw;
+  height: 90vh;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-wrapper-nav {
+  flex-shrink: 0;
+}
+
+.app-wrapper-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+@media (max-width: 1280px) {
+  .app-wrapper {
+    width: 94vw;
+  }
 }

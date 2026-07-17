@@ -1,5 +1,7 @@
 import React from "react";
-import Card from "antd/lib/card";
+import { Card, Typography } from "antd";
+
+const { Text } = Typography;
 
 export interface PluginBrandCardProps {
   manufacturer: string;
@@ -29,10 +31,10 @@ export const PluginBrandCard: React.FC<PluginBrandCardProps> = ({
           gap: 8,
         }}
       >
-        <span style={{ fontSize: 14, fontWeight: 500 }}>{manufacturer}</span>
-        <span style={{ fontSize: 12, color: "#9ca3af" }}>
+        <Text style={{ fontSize: 14, fontWeight: 500 }}>{manufacturer}</Text>
+        <Text type="secondary" style={{ fontSize: 12 }}>
           {models.length} model(s)
-        </span>
+        </Text>
       </div>
     </Card>
   );
