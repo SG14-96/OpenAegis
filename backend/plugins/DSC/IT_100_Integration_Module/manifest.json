@@ -1,6 +1,6 @@
 {
     "name": "DSC IT-100 Integration Module",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Integrates DSC IT-100 alarm panels with OpenAegis.",
     "author": "Santiago Gutierrez",
     "connectionType": "serial",
@@ -50,6 +50,6 @@
         }
     ],
     "dependencies": [
-        "py-dsc-it100>=1.0.0"
+        "py-dsc-it100>=1.1.0"
     ]
 }
