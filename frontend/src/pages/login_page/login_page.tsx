@@ -2,9 +2,11 @@ import type React from "react";
 import useAuth from "../../hooks/useAuth";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, Button, Input } from "antd";
+import { Card, Button, Input, Typography } from "antd";
 
 import "./login_page.css";
+
+const { Text, Paragraph } = Typography;
 
 export function DemoAuthControls() {
   const { isAuthenticated, user, login, logout } = useAuth();
@@ -28,14 +30,16 @@ export function DemoAuthControls() {
       <div style={{ marginTop: 12 }}>
         {isAuthenticated ? (
           <>
-            <div>Signed in as: {user?.username}</div>
-            <button onClick={() => logout()}>Sign out</button>
+            <Text>Signed in as: {user?.username}</Text>
+            <Button onClick={() => logout()}>Sign out</Button>
           </>
         ) : (
           <div>
-            <p>Enter your credentials to sign in.</p>
+            <Paragraph>Enter your credentials to sign in.</Paragraph>
             <div className="input-field">
-              <label htmlFor="username">Username</label>
+              <Text>
+                <label htmlFor="username">Username</label>
+              </Text>
               <Input
                 id="username"
                 value={usernameVal}
@@ -44,7 +48,9 @@ export function DemoAuthControls() {
               />
             </div>
             <div className="input-field" style={{ marginTop: "1em" }}>
-              <label htmlFor="password">Password</label>
+              <Text>
+                <label htmlFor="password">Password</label>
+              </Text>
               <Input.Password
                 id="password"
                 value={passwordVal}

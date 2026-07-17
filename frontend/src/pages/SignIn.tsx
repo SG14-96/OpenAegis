@@ -1,6 +1,9 @@
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { Typography } from "antd";
 import useAuth from "../hooks/useAuth";
+
+const { Title, Text } = Typography;
 
 export default function SignIn() {
   const [username, setUsername] = useState("");
@@ -30,7 +33,7 @@ export default function SignIn() {
 
   return (
     <div style={{ padding: 20 }}>
-      <h2>Sign In</h2>
+      <Title level={2}>Sign In</Title>
       <form
         onSubmit={handleSubmit}
         style={{
@@ -54,7 +57,7 @@ export default function SignIn() {
         <button disabled={loading} type="submit">
           {loading ? "Signing in..." : "Sign in"}
         </button>
-        {error && <div style={{ color: "red" }}>{error}</div>}
+        {error && <Text type="danger">{error}</Text>}
       </form>
     </div>
   );

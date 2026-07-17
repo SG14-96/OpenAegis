@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
+export type AlarmState = "disarmed" | "armed_stay" | "armed_away" | "triggered";
+export type TriggerType = "panic" | "fire" | "auxiliary";
+
 type AppStore = {
   user: User | null;
   accessToken: string | null;
@@ -9,12 +12,16 @@ type AppStore = {
     plugin: string;
     status: "loaded" | "not_loaded";
   };
+  alarmState: AlarmState;
+  triggerType: TriggerType;
   signIn: (tokens: { access: string; refresh?: string }, user?: User) => void;
   signOut: () => void;
   setActivePlugin: (plugin: {
     plugin: string;
     status: "loaded" | "not_loaded";
   }) => void;
+  setAlarmState: (alarmState: AlarmState) => void;
+  trigger: (triggerType: TriggerType) => void;
 };
 
 export const useAppStore = create<AppStore>()(
@@ -27,6 +34,8 @@ export const useAppStore = create<AppStore>()(
         plugin: "None",
         status: "not_loaded",
       },
+      alarmState: "disarmed",
+      triggerType: "panic",
       signIn: (tokens, user) =>
         set((s) => ({
           accessToken: tokens.access,
@@ -46,6 +55,8 @@ export const useAppStore = create<AppStore>()(
             status: plugin?.status ?? "not_loaded",
           },
         }),
+      setAlarmState: (alarmState) => set({ alarmState }),
+      trigger: (triggerType) => set({ triggerType, alarmState: "triggered" }),
     }),
     {
       name: "openAegis-app",

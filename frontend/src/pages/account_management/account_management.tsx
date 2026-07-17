@@ -1,4 +1,16 @@
-import { Button, Tag, Input, Tabs, Form, Table, Modal, Spin } from "antd";
+import {
+  Button,
+  Tag,
+  Input,
+  Tabs,
+  Form,
+  Table,
+  Modal,
+  Spin,
+  Typography,
+} from "antd";
+
+const { Title, Paragraph } = Typography;
 import "../../styles/accountManagement.css";
 import { useEffect, useState } from "react";
 import { getCurrentUser } from "../../services/user";
@@ -43,7 +55,7 @@ const AccountManagementPage = () => {
 
   const myAccountTab = (
     <div>
-      <p>Change account settings and preferences.</p>
+      <Paragraph>Change account settings and preferences.</Paragraph>
       <Tag color="orange">Admin</Tag>
       <div className="account-details-container">
         <div className="account-details-item">
@@ -246,7 +258,7 @@ const AccountManagementPage = () => {
 
   const otherAccountsTab = (
     <div>
-      <p>Manage other user accounts in the system.</p>
+      <Paragraph>Manage other user accounts in the system.</Paragraph>
       <Table dataSource={dataSource} columns={columns} rowKey="user_uuid" />
     </div>
   );
@@ -272,9 +284,9 @@ const AccountManagementPage = () => {
           setUserBeingEdited(null);
         }}
       >
-        <p>Some contents...</p>
-        <p>Some contents...</p>
-        <p>Some contents...</p>
+        <Paragraph>Some contents...</Paragraph>
+        <Paragraph>Some contents...</Paragraph>
+        <Paragraph>Some contents...</Paragraph>
       </Modal>
       {isLoading ? (
         <div className="account-spinner-container">
@@ -282,7 +294,7 @@ const AccountManagementPage = () => {
         </div>
       ) : (
         <>
-          <h1>Account Management</h1>
+          <Title level={1}>Account Management</Title>
           <Tabs items={tabItems} />
         </>
       )}
