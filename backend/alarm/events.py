@@ -17,3 +17,9 @@ class AlarmEvent:
     # Plugin lifecycle
     READY           = "ready"
     ERROR           = "error"           # payload: "detail: str"
+
+    # Full state refresh — payload must include "partitions: dict" and
+    # "zones: dict", matching StateStore.snapshot() from py-dsc-it100 (or an
+    # equivalent shape from another plugin). The manager caches the latest
+    # one it sees and serves it from GET /api/v1/alarm/state.
+    STATE_SNAPSHOT  = "state_snapshot"

@@ -3,10 +3,12 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from schema.settings import AlarmCreateRequestBody, AlarmUpdateRequestBody
+from schema.state import AlarmStateSnapshot
 from alarm.commands import CommandPayload
 from alarm.manager import AlarmManager, PluginLoadError
 from alarm.ws_manager import WSManager
-from dependencies import get_current_user, get_db
+from dependencies import get_current_user, get_current_user_ws, get_db
+from models import models
 
 router = APIRouter()
 
@@ -154,6 +156,23 @@ async def delete_alarm(
 
 
 # ------------------------------------------------------------------ #
+#  Live state                                                          #
+# ------------------------------------------------------------------ #
+
+@router.get("/state", response_model=AlarmStateSnapshot)
+async def get_alarm_state(
+    manager: AlarmManager = Depends(_get_manager),
+    _=Depends(get_current_user),
+):
+    """
+    Current known partitions/zones, as last reported by the active plugin.
+    Called once on frontend load to hydrate app-wide state; live updates
+    after that arrive over the /ws websocket instead of polling this route.
+    """
+    return manager.state_snapshot
+
+
+# ------------------------------------------------------------------ #
 #  Plugin info                                                         #
 # ------------------------------------------------------------------ #
 
@@ -169,7 +188,10 @@ async def list_available_plugins(
 # ------------------------------------------------------------------ #
 
 @router.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket):
+async def websocket_endpoint(
+    ws: WebSocket,
+    _user: models.User = Depends(get_current_user_ws),
+):
     ws_manager: WSManager = ws.app.state.ws_manager
     alarm_manager: AlarmManager = ws.app.state.alarm_manager
 

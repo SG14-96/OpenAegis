@@ -53,18 +53,15 @@ def get_all_users(db: Session, skip: int = 0, limit: int = 100):
 
 
 def update_user(db: Session, db_user: models.User, user_update: UserModel.UserBase):
-    empty_fields = []
     update_data = user_update.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         if value is not None:
             setattr(db_user, key, value)
-        else:
-            empty_fields.append(key)
 
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    return {"user": db_user, "empty_fields": empty_fields}
+    return db_user
 
 
 def update_user_password(db: Session, db_user: models.User, new_password: str):

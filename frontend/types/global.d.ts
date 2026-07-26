@@ -4,8 +4,8 @@ declare global {
     username: string;
     email: string;
     full_name: string;
-    last_name: string;
-    is_superuser: boolean;
+    disabled: boolean;
+    isSuperUser: boolean;
   };
 
   type PluginManifestOption = {

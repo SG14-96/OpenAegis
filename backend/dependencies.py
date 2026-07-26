@@ -1,5 +1,5 @@
 from typing import Generator
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, WebSocket, WebSocketException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
@@ -38,6 +38,35 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if user is None:
         raise credentials_exception
     return user
+
+async def get_current_user_ws(
+    websocket: WebSocket,
+    token: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> models.User:
+    """
+    WebSocket counterpart of get_current_user.
+
+    Native browser WebSockets can't set an Authorization header, so the access
+    token travels as a query param instead (?token=...). Raising
+    WebSocketException here closes the connection before the handler body
+    runs — ws.accept() is never reached for an unauthenticated client.
+    """
+    denied = WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Could not validate credentials")
+    if token is None:
+        raise denied
+    try:
+        payload = jwt.decode(token, security.SECRET_KEY, algorithms=[security.ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise denied
+    except JWTError:
+        raise denied
+    user = crud.get_user_by_username(db, username=username)
+    if user is None:
+        raise denied
+    return user
+
 
 def is_super_user(current_user: models.User):
     return current_user.isSuperUser
