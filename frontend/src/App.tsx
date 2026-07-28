@@ -4,7 +4,6 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthGuard } from "./components/AuthGuard";
 import ProtectedRoute from "./components/ProtectedRoute";
 import LoginPage from "./pages/login_page/login_page";
-import AccountManagementPage from "./pages/account_management/account_management";
 import AppWrapper from "./components/AppWrapper";
 import HomePage from "./pages/home/home_page";
 import NotificationsPage from "./pages/notifications_page/notifications_page";
@@ -25,16 +24,6 @@ function App() {
       <Routes>
           <Route path="/" element={<HomeRedirect />} />
           <Route path="/signin" element={<LoginPage />} />
-          <Route
-            path="/account"
-            element={
-              <ProtectedRoute>
-                <AppWrapper>
-                  <AccountManagementPage />
-                </AppWrapper>
-              </ProtectedRoute>
-            }
-          />
           <Route
             path="/home"
             element={

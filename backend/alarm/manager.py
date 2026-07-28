@@ -9,6 +9,7 @@ import sys
 from typing import TYPE_CHECKING, Callable
 from schema.settings import AlarmPartition, AlarmZone
 
+from alarm.events import AlarmEvent
 from alarm.ws_manager import WSManager
 
 if TYPE_CHECKING:
@@ -34,6 +35,11 @@ class AlarmManager:
         self._module_path: str | None = None # Python module path of the currently loaded plugin
 
         self.partitions: list[AlarmPartition] = [] # List of alarm partitions, each containing zones and their states
+
+        # Last known full state snapshot, as pushed by the active plugin via an
+        # AlarmEvent.STATE_SNAPSHOT message. Served to clients on connect via
+        # GET /api/v1/alarm/state so they don't have to wait for the next event.
+        self._state_snapshot: dict = {"partitions": {}, "zones": {}}
 
     # ------------------------------------------------------------------ #
     #  Plugin lifecycle                                                  #
@@ -124,6 +130,7 @@ class AlarmManager:
         self._plugin = None
         self._plugin_name = None
         self._module_path = None
+        self._state_snapshot = {"partitions": {}, "zones": {}}
         logger.info("Plugin unloaded: %s", name)
 
     # ------------------------------------------------------------------ #
@@ -190,6 +197,11 @@ class AlarmManager:
         from plugins.discovery import discover_plugins
         return discover_plugins()
 
+    @property
+    def state_snapshot(self) -> dict:
+        """Latest {"partitions": {...}, "zones": {...}} reported by the active plugin."""
+        return self._state_snapshot
+
     # ------------------------------------------------------------------ #
     #  Internal event handling                                             #
     # ------------------------------------------------------------------ #
@@ -206,6 +218,11 @@ class AlarmManager:
 
     async def _on_plugin_event(self, source: str, msg: dict) -> None:
         logger.info("Event from '%s': %s", source, msg)
+        if msg.get("type") == AlarmEvent.STATE_SNAPSHOT:
+            self._state_snapshot = {
+                "partitions": msg.get("partitions", {}),
+                "zones": msg.get("zones", {}),
+            }
         await self._ws.broadcast(json.dumps(msg))
 
     # ------------------------------------------------------------------ #

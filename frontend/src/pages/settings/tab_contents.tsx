@@ -5,10 +5,12 @@ import {
   Button,
   Col,
   Descriptions,
-  List,
+  Form,
+  Input,
   Modal,
   Row,
   Spin,
+  Table,
   Tag,
   Typography,
 } from "antd";
@@ -16,9 +18,20 @@ import { PluginBrandCard } from "./plugins_settings_ui/plugin_brand_card";
 import { PluginModelCard } from "./plugins_settings_ui/plugin_model_card";
 import { PluginSetupSubview } from "./plugins_settings_ui/plugin_install_view";
 import type { StepValues } from "./plugins_settings_ui/plugin_install_view";
+import { ActivePluginCard } from "./plugins_settings_ui/active_plugin_card";
 import { listAvailablePlugins, loadPlugin } from "../../services/plugins";
 import { getCurrentUser } from "../../services/user";
+import {
+  listUsers,
+  updateUser as updateOtherUser,
+  disableUser,
+  enableUser,
+  deleteUser,
+} from "../../services/adminUsers";
 import { useAppStore } from "../../store/appStore";
+import "../../styles/accountManagement.css";
+
+const { Paragraph } = Typography;
 
 type AsyncState<T> = {
   data: T | null;
@@ -30,8 +43,18 @@ function asyncInit<T>(): AsyncState<T> {
   return { data: null, isLoading: false, error: null };
 }
 
-export const InformationTab: React.FC = () => {
+function getErrorMessage(err: unknown, fallback: string): string {
+  const detail = (err as { response?: { data?: { detail?: string } } })
+    ?.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (err instanceof Error) return err.message;
+  return fallback;
+}
+
+export const AccountTab: React.FC = () => {
   const [userInfo, setUserInfo] = useState<AsyncState<User>>(asyncInit);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftUser, setDraftUser] = useState<User | null>(null);
 
   useEffect(() => {
     setUserInfo({ data: null, isLoading: true, error: null });
@@ -60,26 +83,439 @@ export const InformationTab: React.FC = () => {
 
   if (!userInfo.data) return null;
 
-  const u = userInfo.data;
-  const rows = [
-    { label: "Username", value: u.username },
-    { label: "Email", value: u.email },
-    { label: "Full Name", value: `${u.full_name} ${u.last_name}`.trim() },
-    { label: "Admin", value: u.is_superuser ? "Yes" : "No" },
-  ];
+  const user = userInfo.data;
+  const displayedUser = isEditing ? draftUser ?? user : user;
 
   return (
     <div>
-      <Typography.Title level={4}>User Information</Typography.Title>
-      <List
-        bordered
-        dataSource={rows}
-        renderItem={(item) => (
-          <List.Item>
-            <Typography.Text strong>{item.label}:</Typography.Text>&nbsp;
-            {item.value}
-          </List.Item>
+      <Paragraph>Change account settings and preferences.</Paragraph>
+      {user.isSuperUser && <Tag color="orange">Admin</Tag>}
+      <div className="account-details-container">
+        <div className="account-details-item">
+          <Form
+            labelCol={{ span: 4 }}
+            wrapperCol={{ span: 14 }}
+            layout="vertical"
+            disabled={!isEditing}
+          >
+            <Form.Item label="Name:">
+              <Input
+                value={displayedUser.full_name || "N/A"}
+                size="small"
+                onChange={(e) =>
+                  setDraftUser((d) => ({
+                    ...(d ?? user),
+                    full_name: e.target.value,
+                  }))
+                }
+              />
+            </Form.Item>
+            <Form.Item label="Username:">
+              <Input
+                value={displayedUser.username || "N/A"}
+                size="small"
+                onChange={(e) =>
+                  setDraftUser((d) => ({
+                    ...(d ?? user),
+                    username: e.target.value,
+                  }))
+                }
+              />
+            </Form.Item>
+            <Form.Item label="Email:">
+              <Input
+                value={displayedUser.email || "N/A"}
+                size="small"
+                onChange={(e) =>
+                  setDraftUser((d) => ({
+                    ...(d ?? user),
+                    email: e.target.value,
+                  }))
+                }
+              />
+            </Form.Item>
+          </Form>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "row",
+              justifyContent: "center",
+            }}
+          >
+            {!isEditing ? (
+              <Button
+                variant="solid"
+                color="primary"
+                onClick={() => {
+                  setDraftUser(user);
+                  setIsEditing(true);
+                }}
+              >
+                Edit Account Details
+              </Button>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "row",
+                  justifyContent: "center",
+                  gap: "20px",
+                }}
+              >
+                <Button
+                  variant="outlined"
+                  onClick={() => {
+                    setDraftUser(null);
+                    setIsEditing(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="solid"
+                  color="primary"
+                  onClick={() => {
+                    if (draftUser) {
+                      setUserInfo((s) => ({ ...s, data: draftUser }));
+                    }
+                    setDraftUser(null);
+                    setIsEditing(false);
+                  }}
+                >
+                  Update Account Details
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="account-buttons-container">
+        <Button variant="outlined">Change Password</Button>
+        <Button variant="outlined" danger>
+          Delete Account
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+type EditUserFormValues = {
+  full_name: string;
+  username: string;
+  email: string;
+};
+
+type ConfirmAction = {
+  type: "disable" | "delete";
+  user: User;
+};
+
+export const OtherAccountsTab: React.FC = () => {
+  const [users, setUsers] = useState<AsyncState<User[]>>(asyncInit);
+
+  const [userBeingEdited, setUserBeingEdited] = useState<User | null>(null);
+  const [editForm] = Form.useForm<EditUserFormValues>();
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(
+    null
+  );
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+
+  const [enablingUuid, setEnablingUuid] = useState<string | null>(null);
+  const [enableError, setEnableError] = useState<string | null>(null);
+
+  const fetchUsers = () => {
+    setUsers({ data: null, isLoading: true, error: null });
+    listUsers()
+      .then((data) => setUsers({ data, isLoading: false, error: null }))
+      .catch((err) =>
+        setUsers({
+          data: null,
+          isLoading: false,
+          error: getErrorMessage(err, "Failed to load users"),
+        })
+      );
+  };
+
+  useEffect(fetchUsers, []);
+
+  const openEdit = (record: User) => {
+    setEditError(null);
+    setUserBeingEdited(record);
+    editForm.setFieldsValue({
+      full_name: record.full_name,
+      username: record.username,
+      email: record.email,
+    });
+  };
+
+  const closeEdit = () => {
+    setUserBeingEdited(null);
+    setEditError(null);
+    editForm.resetFields();
+  };
+
+  const handleEditSubmit = async () => {
+    if (!userBeingEdited) return;
+    let values: EditUserFormValues;
+    try {
+      values = await editForm.validateFields();
+    } catch {
+      return; // antd already surfaces field-level validation errors
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      const updated = await updateOtherUser(userBeingEdited.user_uuid, values);
+      setUsers((s) => ({
+        ...s,
+        data: (s.data ?? []).map((u) =>
+          u.user_uuid === updated.user_uuid ? updated : u
+        ),
+      }));
+      closeEdit();
+    } catch (err) {
+      setEditError(getErrorMessage(err, "Failed to update user"));
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const closeConfirm = () => {
+    setConfirmAction(null);
+    setConfirmError(null);
+  };
+
+  const handleConfirm = async () => {
+    if (!confirmAction) return;
+    setConfirmLoading(true);
+    setConfirmError(null);
+    try {
+      if (confirmAction.type === "disable") {
+        const updated = await disableUser(confirmAction.user.user_uuid);
+        setUsers((s) => ({
+          ...s,
+          data: (s.data ?? []).map((u) =>
+            u.user_uuid === updated.user_uuid ? updated : u
+          ),
+        }));
+      } else {
+        await deleteUser(confirmAction.user.user_uuid);
+        setUsers((s) => ({
+          ...s,
+          data: (s.data ?? []).filter(
+            (u) => u.user_uuid !== confirmAction.user.user_uuid
+          ),
+        }));
+      }
+      closeConfirm();
+    } catch (err) {
+      setConfirmError(
+        getErrorMessage(err, `Failed to ${confirmAction.type} user`)
+      );
+    } finally {
+      setConfirmLoading(false);
+    }
+  };
+
+  const handleEnable = async (record: User) => {
+    setEnableError(null);
+    setEnablingUuid(record.user_uuid);
+    try {
+      const updated = await enableUser(record.user_uuid);
+      setUsers((s) => ({
+        ...s,
+        data: (s.data ?? []).map((u) =>
+          u.user_uuid === updated.user_uuid ? updated : u
+        ),
+      }));
+    } catch (err) {
+      setEnableError(getErrorMessage(err, "Failed to enable user"));
+    } finally {
+      setEnablingUuid(null);
+    }
+  };
+
+  const columns = [
+    {
+      title: "Full Name",
+      dataIndex: "full_name",
+      key: "full_name",
+    },
+    {
+      title: "Username",
+      dataIndex: "username",
+      key: "username",
+    },
+    {
+      title: "Email",
+      dataIndex: "email",
+      key: "email",
+    },
+    {
+      title: "Role",
+      key: "isSuperUser",
+      render: (_: unknown, record: User) => (
+        <Tag color={record.isSuperUser ? "orange" : "blue"}>
+          {record.isSuperUser ? "Admin" : "User"}
+        </Tag>
+      ),
+    },
+    {
+      title: "Status",
+      key: "disabled",
+      render: (_: unknown, record: User) => (
+        <Tag color={record.disabled ? "red" : "green"}>
+          {record.disabled ? "Disabled" : "Active"}
+        </Tag>
+      ),
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      render: (_: unknown, record: User) =>
+        !record.isSuperUser ? (
+          <div className="account-actions-container">
+            <Button
+              variant="outlined"
+              color="primary"
+              onClick={() => openEdit(record)}
+            >
+              Edit
+            </Button>
+            {record.disabled ? (
+              <Button
+                variant="outlined"
+                color="green"
+                loading={enablingUuid === record.user_uuid}
+                onClick={() => handleEnable(record)}
+              >
+                Enable
+              </Button>
+            ) : (
+              <Button
+                variant="outlined"
+                color="orange"
+                onClick={() =>
+                  setConfirmAction({ type: "disable", user: record })
+                }
+              >
+                Disable
+              </Button>
+            )}
+            <Button
+              variant="outlined"
+              danger
+              onClick={() => setConfirmAction({ type: "delete", user: record })}
+            >
+              Delete
+            </Button>
+          </div>
+        ) : null,
+    },
+  ];
+
+  if (users.isLoading) {
+    return (
+      <div className="flex justify-center p-8">
+        <Spin size="large" />
+      </div>
+    );
+  }
+
+  if (users.error) {
+    return <Alert type="error" title={users.error} />;
+  }
+
+  return (
+    <div>
+      <Modal
+        title={`Edit ${userBeingEdited?.username ?? "User"}`}
+        closable={{ "aria-label": "Custom Close Button" }}
+        open={!!userBeingEdited}
+        onOk={handleEditSubmit}
+        onCancel={closeEdit}
+        confirmLoading={editSaving}
+        okText="Save Changes"
+      >
+        {editError && (
+          <Alert
+            type="error"
+            title={editError}
+            showIcon
+            style={{ marginBottom: 12 }}
+          />
         )}
+        <Form form={editForm} layout="vertical">
+          <Form.Item
+            name="full_name"
+            label="Full Name"
+            rules={[{ required: true, message: "Full name is required" }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            name="username"
+            label="Username"
+            rules={[{ required: true, message: "Username is required" }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            name="email"
+            label="Email"
+            rules={[
+              { required: true, message: "Email is required" },
+              { type: "email", message: "Enter a valid email" },
+            ]}
+          >
+            <Input />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={confirmAction?.type === "delete" ? "Delete User" : "Disable User"}
+        closable={{ "aria-label": "Custom Close Button" }}
+        open={!!confirmAction}
+        onOk={handleConfirm}
+        onCancel={closeConfirm}
+        confirmLoading={confirmLoading}
+        okText={confirmAction?.type === "delete" ? "Delete" : "Disable"}
+        okButtonProps={{ danger: true }}
+      >
+        {confirmError && (
+          <Alert
+            type="error"
+            title={confirmError}
+            showIcon
+            style={{ marginBottom: 12 }}
+          />
+        )}
+        <Paragraph>
+          {confirmAction?.type === "delete"
+            ? `Are you sure you want to delete "${confirmAction.user.username}"? This action cannot be undone.`
+            : `Are you sure you want to disable "${confirmAction?.user.username}"? They will no longer be able to sign in.`}
+        </Paragraph>
+      </Modal>
+
+      <Paragraph>Manage other user accounts in the system.</Paragraph>
+      {enableError && (
+        <Alert
+          type="error"
+          title={enableError}
+          showIcon
+          closable={{ afterClose: () => setEnableError(null) }}
+          style={{ marginBottom: 12 }}
+        />
+      )}
+      <Table
+        dataSource={users.data ?? []}
+        columns={columns}
+        rowKey="user_uuid"
       />
     </div>
   );
@@ -153,18 +589,31 @@ export const PluginsTab: React.FC = () => {
 
   if (plugins.isLoading) {
     return (
-      <div className="flex justify-center p-8">
-        <Spin size="large" />
+      <div>
+        <ActivePluginCard />
+        <div className="flex justify-center p-8">
+          <Spin size="large" />
+        </div>
       </div>
     );
   }
 
   if (plugins.error) {
-    return <Alert type="error" title={plugins.error} />;
+    return (
+      <div>
+        <ActivePluginCard />
+        <Alert type="error" title={plugins.error} />
+      </div>
+    );
   }
 
   if (!plugins.data || plugins.data.length === 0) {
-    return <Alert type="info" title="No plugins available." />;
+    return (
+      <div>
+        <ActivePluginCard />
+        <Alert type="info" title="No plugins available." />
+      </div>
+    );
   }
 
   const breadcrumbItems = [
@@ -200,6 +649,7 @@ export const PluginsTab: React.FC = () => {
 
   return (
     <div className="overflow-y-auto max-h-96">
+      <ActivePluginCard />
       {installStatus === "success" && (
         <Alert
           type="success"

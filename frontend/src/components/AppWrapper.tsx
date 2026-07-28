@@ -1,6 +1,6 @@
 import React from "react";
 import "./AppWrapper.css";
-import { Avatar, Button, Menu } from "antd";
+import { Button, Menu } from "antd";
 import {
   HomeOutlined,
   BellOutlined,
@@ -8,12 +8,16 @@ import {
   SettingOutlined,
 } from "@ant-design/icons";
 import { useAuth } from "../hooks/useAuth";
+import { useAlarmSocket } from "../hooks/useAlarmSocket";
 import Shield from "../assets/shield-clean.svg";
 import { useNavigate } from "react-router-dom";
 
 const AppWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { logout } = useAuth();
   const navigate = useNavigate();
+  // Hydrates app-wide alarm state on mount and keeps it live for as long as
+  // AppWrapper (i.e. an authenticated route) stays mounted.
+  useAlarmSocket();
 
   const menuItems = [
     {
@@ -52,12 +56,6 @@ const AppWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           mode="horizontal"
           items={menuItems}
           style={{ flex: 1, border: "none" }}
-        />
-        <Avatar
-          src="https://primefaces.org/cdn/primereact/images/avatar/amyelsner.png"
-          shape="circle"
-          style={{ cursor: "pointer" }}
-          onClick={() => navigate("/account")}
         />
         <Button style={{ marginInline: "1em" }} onClick={logout} size="small">
           Sign out

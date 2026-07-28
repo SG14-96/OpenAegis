@@ -9,6 +9,8 @@ import {
   MedicineBoxOutlined,
 } from "@ant-design/icons";
 import type { AlarmState, TriggerType } from "../../../store/appStore";
+import { sendAlarmCommand } from "../../../services/alarmSocket";
+import type { AlarmCommand } from "../../../types/alarm";
 
 export interface AlarmPanicCardProps {
   loading: boolean;
@@ -65,16 +67,31 @@ export const AlarmPanicCard: React.FC<AlarmPanicCardProps> = ({
         ? PANIC_CONFIRMATION[pendingAction.value]
         : null;
 
+  const ARM_COMMANDS: Record<ArmMode, AlarmCommand> = {
+    armed_stay: "arm_stay",
+    armed_away: "arm_away",
+  };
+
   const handleConfirm = () => {
+    // Optimistically reflect the action locally; the real confirmation
+    // (and any correction, e.g. panel rejects the arm) arrives moments
+    // later as a websocket event and overwrites this via the store.
     if (pendingAction?.kind === "arm") {
       setAlarmState(pendingAction.value);
+      sendAlarmCommand({ command: ARM_COMMANDS[pendingAction.value] });
     } else if (pendingAction?.kind === "panic") {
       trigger(pendingAction.value);
+      sendAlarmCommand({ command: "panic", panic_type: pendingAction.value });
     }
     setPendingAction(null);
   };
 
   const handleCancel = () => setPendingAction(null);
+
+  const handleDisarm = () => {
+    setAlarmState("disarmed");
+    sendAlarmCommand({ command: "disarm" });
+  };
 
   return (
     <Card loading={loading} title="Alarm & Panic Modes">
@@ -101,7 +118,7 @@ export const AlarmPanicCard: React.FC<AlarmPanicCardProps> = ({
               block
               icon={<UnlockOutlined />}
               type={alarmState === "disarmed" ? "primary" : "default"}
-              onClick={() => setAlarmState("disarmed")}
+              onClick={handleDisarm}
             >
               Disarm
             </Button>

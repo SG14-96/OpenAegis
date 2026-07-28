@@ -78,7 +78,7 @@ const LoginPage = (): React.ReactElement => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate("/account", { replace: true });
+      navigate("/home", { replace: true });
     }
   }, [isAuthenticated, navigate]);
 
