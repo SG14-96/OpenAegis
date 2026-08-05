@@ -66,6 +66,24 @@ class PluginExecutionError(PluginError):
         self.cause = cause
 
 
+class IllegalCommandError(PluginError):
+    """Raised when the active plugin reports that a command is not legal
+    to send given the last-known panel state (see `AlarmInterface.is_legal`).
+
+    Attributes:
+        command: the `AlarmCommand` that was rejected
+        reason: a human-readable explanation from the plugin, if any
+    """
+
+    def __init__(self, command: object, reason: Optional[str] = None):
+        self.command = command
+        self.reason = reason
+        message = f"Command '{command}' is not legal right now."
+        if reason:
+            message += f" {reason}"
+        super().__init__(message)
+
+
 __all__ = [
     "PluginError",
     "PluginNotFoundError",
@@ -74,5 +92,6 @@ __all__ = [
     "PluginDependencyError",
     "PluginVersionMismatchError",
     "PluginExecutionError",
+    "IllegalCommandError",
 ]
 

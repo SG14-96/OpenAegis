@@ -9,6 +9,7 @@ from alarm.manager import AlarmManager, PluginLoadError
 from alarm.ws_manager import WSManager
 from dependencies import get_current_user, get_current_user_ws, get_db
 from models import models
+from plugins.exceptions import IllegalCommandError
 
 router = APIRouter()
 
@@ -208,6 +209,12 @@ async def websocket_endpoint(
 
             try:
                 alarm_manager.dispatch_command(payload)
+            except IllegalCommandError as exc:
+                await ws.send_json({
+                    "error": "illegal_command",
+                    "command": payload.command.value,
+                    "reason": exc.reason,
+                })
             except RuntimeError as exc:
                 await ws.send_json({"error": str(exc)})
     except WebSocketDisconnect:
