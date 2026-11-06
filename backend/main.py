@@ -99,7 +99,7 @@ async def on_startup():
 
     # Wire up alarm subsystem
     app.state.ws_manager = WSManager()
-    app.state.alarm_manager = AlarmManager(app.state.ws_manager)
+    app.state.alarm_manager = AlarmManager(app.state.ws_manager, database.SessionLocal)
 
     # Restore the active plugin and alarm state from the last saved configuration.
     restore_db = database.SessionLocal()

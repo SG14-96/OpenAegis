@@ -43,6 +43,9 @@ export interface PartitionState {
 export interface AlarmStateSnapshot {
   partitions: Record<string, PartitionState>;
   zones: Record<string, ZoneState>;
+  // Only present on GET /api/v1/alarm/state — plugin "state_snapshot"
+  // events don't carry troubles (those arrive as "trouble" events).
+  troubles?: string[];
 }
 
 // Mirrors backend/alarm/events.py — messages broadcast to every connected
@@ -53,11 +56,40 @@ export type AlarmServerEvent =
   | { type: "zone_open"; zone_id: number; label?: string }
   | { type: "zone_closed"; zone_id: number }
   | { type: "zone_bypassed"; zone_id: number; bypassed: boolean }
-  | { type: "armed_stay"; partition_id: number }
-  | { type: "armed_away"; partition_id: number }
-  | { type: "disarmed"; partition_id: number }
+  | { type: "armed_stay"; partition_id: number; last_user?: number | null }
+  | { type: "armed_away"; partition_id: number; last_user?: number | null }
+  | { type: "disarmed"; partition_id: number; last_user?: number | null }
   | { type: "alarm_triggered"; partition_id: number; zone_id?: number }
   | { type: "alarm_restored"; partition_id: number; zone_id?: number }
   | { type: "alarm_panicked"; partition_id: number; panicked: boolean; panic_type: string }
+  | { type: "trouble"; trouble_type: string; restored: boolean }
   | { type: "ready" }
   | { type: "error"; detail: string };
+
+// Direct replies to a command this client sent over the websocket (see the
+// /ws handler in backend/api/v1/alarm.py). These carry no "type" key.
+export type AlarmCommandReply =
+  | { error: "illegal_command"; command: AlarmCommand; reason: string | null }
+  | { error: string };
+
+// One row of GET /api/v1/alarm/events (backend/schema/events.py).
+export interface AlarmHistoryEvent {
+  id: string;
+  category: "arming" | "alarm";
+  event_type: string;
+  partition_id: number;
+  last_user: number | null;
+  trigger_type: string | null;
+  created_at: string;
+}
+
+// GET /api/v1/alarm/ — the saved alarm configuration.
+export interface AlarmConfig {
+  alarm_name: string;
+  plugin: {
+    plugin_name: string;
+    module_path: string;
+    setup_values: Record<string, string | number> | null;
+  } | null;
+  active_plugin: string | null;
+}

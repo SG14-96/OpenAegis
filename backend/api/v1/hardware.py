@@ -1,9 +1,12 @@
 from typing import Any, Dict, List
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from serial.tools import list_ports
 
-router = APIRouter(prefix="/hardware", tags=["hardware"])
+from dependencies import get_current_user
+
+# Mounted at /api/v1/hardware by main.py.
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 def _parse_port(port: Any) -> Dict[str, Any]:
