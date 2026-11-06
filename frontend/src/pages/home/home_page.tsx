@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Typography, Row, Col } from "antd";
 import { useAppStore } from "../../store/appStore";
 import { AlarmStatusCard } from "./home_ui/alarm_status_card";
@@ -10,7 +10,7 @@ import { PartitionsZonesCard } from "./home_ui/partitions_zones_card";
 const { Title } = Typography;
 
 const HomePage = () => {
-  const { activePlugin, alarmState, triggerType, setAlarmState, trigger, partitions, zones } =
+  const { activePlugin, alarmState, triggerType, setAlarmState, trigger, partitions, zones, troubles } =
     useAppStore();
   const [isLoadingData] = useState(false);
 
@@ -23,6 +23,9 @@ const HomePage = () => {
             loading={isLoadingData}
             alarmState={alarmState}
             triggerType={triggerType}
+            partition={partitions["1"]}
+            zones={zones}
+            troubles={troubles}
           />
         </Col>
 

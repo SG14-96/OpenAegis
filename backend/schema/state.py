@@ -24,3 +24,6 @@ class PartitionState(BaseModel):
 class AlarmStateSnapshot(BaseModel):
     partitions: dict[str, PartitionState] = {}
     zones: dict[str, ZoneState] = {}
+    # Active system-wide trouble types (AlarmEvent.TROUBLE). Tracked by the
+    # manager rather than reported in plugin snapshots.
+    troubles: list[str] = []

@@ -1,5 +1,6 @@
 import { useAppStore } from "../store/appStore";
-import type { AlarmServerEvent, CommandPayload } from "../types/alarm";
+import { getAlarmState } from "./alarm";
+import type { AlarmCommandReply, AlarmServerEvent, CommandPayload } from "../types/alarm";
 
 // Singleton connection manager, mirroring how utils/axiosClient.ts is a
 // single shared REST client rather than something each component creates —
@@ -28,10 +29,41 @@ function wsUrl(token: string): string {
   return `${wsBase}/api/v1/alarm/ws?token=${encodeURIComponent(token)}`;
 }
 
+// Event types the backend also writes to its history tables.
+const HISTORY_EVENT_TYPES = new Set<AlarmServerEvent["type"]>([
+  "armed_stay",
+  "armed_away",
+  "disarmed",
+  "alarm_triggered",
+  "alarm_restored",
+  "alarm_panicked",
+]);
+
+// Re-syncs partitions/zones from the backend. Used after a command fails, to
+// undo the optimistic UI update the command's sender already applied.
+function resyncAlarmState(): void {
+  getAlarmState()
+    .then((snapshot) => useAppStore.getState().setAlarmSnapshot(snapshot))
+    .catch((err) => console.error("Failed to resync alarm state", err));
+}
+
+// Handles a direct reply to a command this client sent.
+function applyCommandReply(reply: AlarmCommandReply): void {
+  const text =
+    reply.error === "illegal_command" && "reason" in reply
+      ? reply.reason ?? `The panel would reject "${reply.command}" right now.`
+      : reply.error;
+  useAppStore.getState().showPanelNotice("warning", text);
+  resyncAlarmState();
+}
+
 // Applies one incoming server message to the store. See backend/alarm/events.py
 // for the full contract each event type carries.
 function applyServerEvent(event: AlarmServerEvent): void {
-  const { setAlarmSnapshot, upsertPartition, upsertZone, trigger } = useAppStore.getState();
+  const { setAlarmSnapshot, upsertPartition, upsertZone, trigger, setTrouble, showPanelNotice, bumpHistory } =
+    useAppStore.getState();
+
+  if (HISTORY_EVENT_TYPES.has(event.type)) bumpHistory();
 
   switch (event.type) {
     case "state_snapshot":
@@ -85,10 +117,30 @@ function applyServerEvent(event: AlarmServerEvent): void {
       }
       break;
 
-    // "ready" / "error" / anything else: no store update needed today.
+    case "trouble":
+      setTrouble(event.trouble_type, !event.restored);
+      showPanelNotice(
+        event.restored ? "info" : "warning",
+        `${troubleLabel(event.trouble_type)} trouble ${event.restored ? "restored" : "reported"}`
+      );
+      break;
+
+    case "error":
+      showPanelNotice("error", event.detail);
+      resyncAlarmState();
+      break;
+
+    // "ready" / anything else: no store update needed today.
     default:
       break;
   }
+}
+
+// "ac_power" -> "AC power", "wireless_low_battery" -> "Wireless low battery".
+export function troubleLabel(troubleType: string): string {
+  const words = troubleType.split("_").map((w) => (w === "ac" || w === "tlm" || w === "ftc" ? w.toUpperCase() : w));
+  const text = words.join(" ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 // Opens the alarm websocket if it isn't already open/connecting. No-op if
@@ -117,8 +169,9 @@ export function connectAlarmSocket(): void {
   ws.onmessage = (message: MessageEvent<string>) => {
     if (socket !== ws) return;
     try {
-      const event = JSON.parse(message.data) as AlarmServerEvent;
-      applyServerEvent(event);
+      const data = JSON.parse(message.data) as AlarmServerEvent | AlarmCommandReply;
+      if ("type" in data) applyServerEvent(data);
+      else if ("error" in data) applyCommandReply(data);
     } catch (err) {
       console.error("Failed to parse alarm websocket message", err);
     }

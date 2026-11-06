@@ -25,17 +25,22 @@ Known limitations (protocol, not implementation gaps):
 * PanicEvent from the panel doesn't carry a partition number; we report it
   against partition 1, matching this app's single-partition-by-default
   command shape (CommandPayload.partition_id defaults to 1 too).
+
+Partition events that change arm/alarm state are followed by a fresh
+STATE_SNAPSHOT so the host's cached state (used by is_legal) stays current.
 """
 from __future__ import annotations
 
 import logging
+import threading
 
 from dsc_it100 import (
     IT100Client,
     ZoneEvent, ZoneEventKind,
     PartitionEvent, PartitionEventKind,
-    PanicEvent,
+    PanicEvent, PanicKind,
     TroubleEvent,
+    LabelEvent,
     SystemEvent, SystemEventKind,
     PANIC_FIRE, PANIC_AMBULANCE, PANIC_PANIC,
     PanelError, CommandTimeout, CommandRejected, NotConnectedError,
@@ -58,11 +63,27 @@ _STEP_CODE = "2"
 _DEFAULT_BAUD = 9600
 
 # AlarmCommand.PANIC's panic_type string -> the wire value trigger_panic() expects.
+# The frontend's vocabulary is panic/fire/auxiliary; the IT-100's "A" key is
+# the ambulance/auxiliary (medical) panic.
 _PANIC_TYPE_TO_WIRE = {
     "fire": PANIC_FIRE,
+    "auxiliary": PANIC_AMBULANCE,
     "ambulance": PANIC_AMBULANCE,
     "panic": PANIC_PANIC,
 }
+
+# Panel-reported PanicKind -> the app's panic_type vocabulary.
+_PANIC_KIND_TO_TYPE = {
+    PanicKind.FIRE: "fire",
+    PanicKind.AMBULANCE: "auxiliary",
+    PanicKind.AUX: "auxiliary",
+    PanicKind.PANIC: "panic",
+    PanicKind.DURESS: "panic",
+}
+
+# Labels arrive as a burst (one 570 per zone/partition) after request_labels();
+# coalesce them into a single snapshot instead of one per label.
+_LABEL_SNAPSHOT_DELAY_S = 0.5
 
 # Partition states that block arming — everything else (ready, ready_to_force_arm,
 # unknown, ...) is left for the panel itself to accept or reject.
@@ -77,6 +98,7 @@ class DSCIntegrationModule(AlarmInterface):
         super().__init__()
         self._panel: IT100Client | None = None
         self._code: str | None = None
+        self._label_timer: threading.Timer | None = None
 
     # ------------------------------------------------------------------ #
     #  Lifecycle                                                            #
@@ -105,6 +127,9 @@ class DSCIntegrationModule(AlarmInterface):
         self.send({"type": AlarmEvent.READY})
 
     def on_unload(self) -> None:
+        if self._label_timer is not None:
+            self._label_timer.cancel()
+            self._label_timer = None
         if self._panel is not None:
             self._panel.disconnect()
             self._panel = None
@@ -175,7 +200,12 @@ class DSCIntegrationModule(AlarmInterface):
 
             elif msg_type == AlarmCommand.PANIC.value:
                 panic_type = message.get("panic_type", "panic")
-                self._panel.trigger_panic(_PANIC_TYPE_TO_WIRE.get(panic_type, PANIC_PANIC))
+                wire = _PANIC_TYPE_TO_WIRE.get(panic_type)
+                if wire is None:
+                    # Never guess which emergency service to summon.
+                    self.send({"type": AlarmEvent.ERROR, "detail": f"Unknown panic type: {panic_type!r}"})
+                    return
+                self._panel.trigger_panic(wire)
 
             else:
                 self.send({"type": AlarmEvent.ERROR, "detail": f"Unknown command: {msg_type!r}"})
@@ -209,7 +239,13 @@ class DSCIntegrationModule(AlarmInterface):
         elif isinstance(event, SystemEvent):
             self._handle_system_event(event)
         elif isinstance(event, TroubleEvent):
-            logger.info("DSC IT-100: trouble %s restored=%s", event.kind.value, event.restored)
+            self.send({
+                "type": AlarmEvent.TROUBLE,
+                "trouble_type": event.kind.value,
+                "restored": event.restored,
+            })
+        elif isinstance(event, LabelEvent):
+            self._schedule_label_snapshot()
         else:
             logger.debug("DSC IT-100: unhandled event %r", event)
 
@@ -229,11 +265,19 @@ class DSCIntegrationModule(AlarmInterface):
             self.send({
                 "type": AlarmEvent.ARMED_STAY if is_stay else AlarmEvent.ARMED_AWAY,
                 "partition_id": event.partition,
+                "last_user": self._last_user(event.partition),
             })
+            self._emit_snapshot()
         elif event.kind is PartitionEventKind.DISARMED:
-            self.send({"type": AlarmEvent.DISARMED, "partition_id": event.partition})
+            self.send({
+                "type": AlarmEvent.DISARMED,
+                "partition_id": event.partition,
+                "last_user": self._last_user(event.partition),
+            })
+            self._emit_snapshot()
         elif event.kind is PartitionEventKind.IN_ALARM:
             self.send({"type": AlarmEvent.ALARM_TRIGGERED, "partition_id": event.partition})
+            self._emit_snapshot()
         else:
             # ready/not_ready/exit_delay/entry_delay/busy/code_required/...
             # have no AlarmEvent counterpart — surface them via a snapshot
@@ -244,7 +288,7 @@ class DSCIntegrationModule(AlarmInterface):
         self.send({
             "type": AlarmEvent.ALARM_PANICKED,
             "partition_id": 1,
-            "panic_type": event.kind.value,
+            "panic_type": _PANIC_KIND_TO_TYPE.get(event.kind, "panic"),
             "panicked": not event.restored,
         })
 
@@ -252,7 +296,21 @@ class DSCIntegrationModule(AlarmInterface):
         if event.kind in (SystemEventKind.SYSTEM_ERROR, SystemEventKind.COMMAND_ERROR):
             self.send({"type": AlarmEvent.ERROR, "detail": f"{event.kind.value}: {event.data}"})
 
+    def _last_user(self, partition: int) -> int | None:
+        if self._panel is None:
+            return None
+        return self._panel.snapshot()["partitions"].get(partition, {}).get("last_user")
+
+    def _schedule_label_snapshot(self) -> None:
+        if self._label_timer is not None:
+            self._label_timer.cancel()
+        self._label_timer = threading.Timer(_LABEL_SNAPSHOT_DELAY_S, self._emit_snapshot)
+        self._label_timer.daemon = True
+        self._label_timer.start()
+
     def _emit_snapshot(self) -> None:
+        if self._panel is None:
+            return
         snapshot = self._panel.snapshot()
         self.send({
             "type": AlarmEvent.STATE_SNAPSHOT,

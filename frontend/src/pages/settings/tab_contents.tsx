@@ -17,9 +17,8 @@ import {
 import { PluginBrandCard } from "./plugins_settings_ui/plugin_brand_card";
 import { PluginModelCard } from "./plugins_settings_ui/plugin_model_card";
 import { PluginSetupSubview } from "./plugins_settings_ui/plugin_install_view";
-import type { StepValues } from "./plugins_settings_ui/plugin_install_view";
 import { ActivePluginCard } from "./plugins_settings_ui/active_plugin_card";
-import { listAvailablePlugins, loadPlugin } from "../../services/plugins";
+import { attachPlugin, listAvailablePlugins, type PluginSetupValues } from "../../services/plugins";
 import { getCurrentUser } from "../../services/user";
 import {
   listUsers,
@@ -44,9 +43,14 @@ function asyncInit<T>(): AsyncState<T> {
 }
 
 function getErrorMessage(err: unknown, fallback: string): string {
-  const detail = (err as { response?: { data?: { detail?: string } } })
+  const detail = (err as { response?: { data?: { detail?: unknown } } })
     ?.response?.data?.detail;
   if (typeof detail === "string") return detail;
+  // Plugin load failures come back as { error, plugin, reason }.
+  if (detail && typeof detail === "object" && "reason" in detail) {
+    const { plugin, reason } = detail as { plugin?: string; reason?: string };
+    return plugin ? `${plugin} failed to load: ${reason}` : String(reason);
+  }
   if (err instanceof Error) return err.message;
   return fallback;
 }
@@ -553,24 +557,22 @@ export const PluginsTab: React.FC = () => {
       );
   }, []);
 
-  const handleInstall = async (values: Record<number, StepValues>) => {
+  const handleInstall = async (values: PluginSetupValues) => {
     if (!selectedModel) return;
     setInstallLoading(true);
     setInstallStatus("idle");
     try {
-      const serialized = Object.fromEntries(
-        Object.entries(values).map(([k, v]) => [k, v])
+      const pluginName = await attachPlugin(
+        selectedModel.module_path,
+        values,
+        selectedModel.manifest?.name ?? selectedModel.name
       );
-      await loadPlugin(selectedModel.module_path, serialized).then((data) => {
-        setActivePlugin(data);
-        setInstallStatus("success");
-        setShowPluginInstallView(false);
-      });
+      setActivePlugin({ plugin: pluginName, status: "loaded" });
+      setInstallStatus("success");
+      setShowPluginInstallView(false);
     } catch (err) {
       setInstallStatus("failure");
-      setInstallError(
-        err instanceof Error ? err.message : "Failed to load plugin"
-      );
+      setInstallError(getErrorMessage(err, "Failed to load plugin"));
     } finally {
       setInstallLoading(false);
     }

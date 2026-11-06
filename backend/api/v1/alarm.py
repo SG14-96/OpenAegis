@@ -1,8 +1,11 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request
+from datetime import datetime
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Depends, Query, Request
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from schema.settings import AlarmCreateRequestBody, AlarmUpdateRequestBody
+from schema.events import AlarmHistoryEvent
 from schema.state import AlarmStateSnapshot
 from alarm.commands import CommandPayload
 from alarm.manager import AlarmManager, PluginLoadError
@@ -34,16 +37,19 @@ async def get_alarm_settings(
         raise HTTPException(status_code=404, detail="No alarm configured.")
 
     plugin_info = None
-    if record.plugin_settings_record:
+    if record.plugin_settings:
         plugin_info = {
-            "plugin_name": record.plugin_settings_record.plugin_name,
-            "module_path": record.plugin_settings_record.data.get("module_path"),
-            "setup_values": record.plugin_settings_record.data.get("setup_values"),
+            "plugin_name": record.plugin_settings.plugin_name,
+            "module_path": record.plugin_settings.data.get("module_path"),
+            "setup_values": record.plugin_settings.data.get("setup_values"),
         }
 
     return {
         "alarm_name": record.alarm_name,
         "plugin": plugin_info,
+        # Name of the plugin actually running right now — None if the saved
+        # plugin failed to load (e.g. the serial device was unplugged).
+        "active_plugin": manager.active_plugin,
         "partitions": manager.partitions,
     }
 
@@ -171,6 +177,19 @@ async def get_alarm_state(
     after that arrive over the /ws websocket instead of polling this route.
     """
     return manager.state_snapshot
+
+
+@router.get("/events", response_model=list[AlarmHistoryEvent])
+async def get_alarm_events(
+    limit: int = Query(default=50, ge=1, le=500),
+    before: datetime | None = Query(default=None, description="Only return events older than this timestamp."),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Arm/disarm and alarm/panic history, newest first."""
+    from crud.events import list_alarm_history
+
+    return list_alarm_history(db, limit, before)
 
 
 # ------------------------------------------------------------------ #

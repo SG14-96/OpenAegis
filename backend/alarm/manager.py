@@ -19,6 +19,10 @@ if TYPE_CHECKING:
     from plugins.AlarmInterface import AlarmInterface
     from sqlalchemy.orm import Session
 
+# Plugin events that are persisted as history, and the table each goes to.
+_ARMING_EVENT_TYPES = {AlarmEvent.ARMED_STAY, AlarmEvent.ARMED_AWAY, AlarmEvent.DISARMED}
+_ALARM_STATE_EVENT_TYPES = {AlarmEvent.ALARM_TRIGGERED, AlarmEvent.ALARM_RESTORED, AlarmEvent.ALARM_PANICKED}
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,8 +35,9 @@ class PluginLoadError(Exception):
 
 
 class AlarmManager:
-    def __init__(self, ws_manager: WSManager) -> None:
+    def __init__(self, ws_manager: WSManager, session_factory: Callable[[], Session] | None = None) -> None:
         self._ws = ws_manager # WebSocket manager for sending events to clients
+        self._session_factory = session_factory # Opens DB sessions for event history; None disables persistence
         self._plugin: AlarmInterface | None = None # Currently loaded plugin instance
         self._plugin_name: str | None = None # Name of the currently loaded plugin (from its manifest)
         self._module_path: str | None = None # Python module path of the currently loaded plugin
@@ -44,6 +49,7 @@ class AlarmManager:
         # GET /api/v1/alarm/state so they don't have to wait for the next event,
         # and handed back to the plugin's own is_legal() as its "current state".
         self._state_snapshot: AlarmStateSnapshot = AlarmStateSnapshot()
+        self._troubles: set[str] = set()
 
     # ------------------------------------------------------------------ #
     #  Plugin lifecycle                                                  #
@@ -135,6 +141,7 @@ class AlarmManager:
         self._plugin_name = None
         self._module_path = None
         self._state_snapshot = AlarmStateSnapshot()
+        self._troubles.clear()
         logger.info("Plugin unloaded: %s", name)
 
     # ------------------------------------------------------------------ #
@@ -208,8 +215,8 @@ class AlarmManager:
 
     @property
     def state_snapshot(self) -> AlarmStateSnapshot:
-        """Latest partitions/zones snapshot reported by the active plugin."""
-        return self._state_snapshot
+        """Latest partitions/zones snapshot reported by the active plugin, plus active troubles."""
+        return self._state_snapshot.model_copy(update={"troubles": sorted(self._troubles)})
 
     # ------------------------------------------------------------------ #
     #  Internal event handling                                             #
@@ -232,7 +239,48 @@ class AlarmManager:
                 "partitions": msg.get("partitions", {}),
                 "zones": msg.get("zones", {}),
             })
+        elif msg.get("type") == AlarmEvent.TROUBLE:
+            if msg.get("restored"):
+                self._troubles.discard(msg.get("trouble_type"))
+            else:
+                self._troubles.add(msg.get("trouble_type"))
+        elif msg.get("type") in _ARMING_EVENT_TYPES | _ALARM_STATE_EVENT_TYPES:
+            try:
+                await asyncio.to_thread(self._record_event, msg)
+            except Exception:
+                # History is best-effort — never drop the live broadcast over it.
+                logger.exception("Failed to record alarm event %s", msg)
         await self._ws.broadcast(json.dumps(msg))
+
+    def _record_event(self, msg: dict) -> None:
+        if self._session_factory is None:
+            return
+        from models.events import AlarmStateEvent, ArmingEvent
+
+        event_type = msg["type"]
+        partition_id = msg.get("partition_id", 1)
+        if event_type in _ARMING_EVENT_TYPES:
+            row = ArmingEvent(
+                partition_id=partition_id,
+                event_type=event_type,
+                last_user=msg.get("last_user"),
+            )
+        elif event_type == AlarmEvent.ALARM_PANICKED and not msg.get("panicked", True):
+            # A panic restore isn't a new alarm; nothing worth a history row.
+            return
+        else:
+            row = AlarmStateEvent(
+                partition_id=partition_id,
+                event_type=event_type,
+                trigger_type=msg.get("panic_type") if event_type == AlarmEvent.ALARM_PANICKED else None,
+            )
+
+        db = self._session_factory()
+        try:
+            db.add(row)
+            db.commit()
+        finally:
+            db.close()
 
     # ------------------------------------------------------------------ #
     #  Internal helpers                                                    #

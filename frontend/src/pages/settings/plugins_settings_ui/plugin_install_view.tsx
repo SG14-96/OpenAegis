@@ -1,6 +1,8 @@
-import React, { useState } from "react";
-import { Button, Divider, Input, Select, Typography } from "antd";
-import { LeftOutlined, RightOutlined } from "@ant-design/icons";
+import React, { useEffect, useState } from "react";
+import { AutoComplete, Button, Divider, Input, Select, Typography } from "antd";
+import { LeftOutlined, ReloadOutlined, RightOutlined } from "@ant-design/icons";
+import { listSerialPorts, type SerialPortInfo } from "../../../services/hardware";
+import type { PluginSetupValues } from "../../../services/plugins";
 
 const { Text, Title } = Typography;
 
@@ -8,6 +10,18 @@ export type StepValues = {
   option?: string | number;
   input?: string;
 };
+
+// Flattens per-step form state into the plain values a plugin's on_load
+// reads (setup_values["<step index>"]). Steps with nothing to answer
+// (instruction-only) are omitted.
+function toSetupValues(values: Record<number, StepValues>): PluginSetupValues {
+  const out: PluginSetupValues = {};
+  for (const [index, v] of Object.entries(values)) {
+    const value = v.option ?? v.input?.trim();
+    if (value !== undefined && value !== "") out[index] = value;
+  }
+  return out;
+}
 
 function stepIsComplete(step: PluginManifestStep, values: StepValues): boolean {
   if (step.options && step.options.length > 0 && values.option === undefined)
@@ -19,7 +33,7 @@ function stepIsComplete(step: PluginManifestStep, values: StepValues): boolean {
 export const PluginSetupSubview: React.FC<{
   model: PluginModel;
   loading?: boolean;
-  onInstall: (values: Record<number, StepValues>) => void;
+  onInstall: (values: PluginSetupValues) => void;
   onClose: () => void;
 }> = ({ model, loading = false, onInstall, onClose }) => {
   const steps = model.manifest?.connectionSetupSteps || [];
@@ -43,7 +57,7 @@ export const PluginSetupSubview: React.FC<{
       setShowErrors(true);
       return;
     }
-    onInstall(stepValues);
+    onInstall(toSetupValues(stepValues));
   };
 
   return (
@@ -123,7 +137,16 @@ const SetupStep: React.FC<{
       </>
     )}
 
-    {step.input && (
+    {step.input?.type === "serial_port" && (
+      <SerialPortInput
+        placeholder={step.input.placeholder}
+        value={values.input}
+        error={error && !values.input?.trim()}
+        onChange={(input) => onChange({ input })}
+      />
+    )}
+
+    {step.input && step.input.type !== "serial_port" && (
       <>
         <Input
           style={{ marginTop: 4 }}
@@ -142,3 +165,70 @@ const SetupStep: React.FC<{
     )}
   </div>
 );
+
+// Lets the user pick a serial port the backend can see, or type a path for
+// one it can't enumerate (e.g. a symlinked /dev/serial/by-id/... entry).
+const SerialPortInput: React.FC<{
+  placeholder: string;
+  value: string | undefined;
+  error: boolean;
+  onChange: (value: string) => void;
+}> = ({ placeholder, value, error, onChange }) => {
+  const [ports, setPorts] = useState<SerialPortInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const fetchPorts = () => {
+    listSerialPorts()
+      .then((result) => {
+        setPorts(result);
+        setLoadError(null);
+      })
+      .catch(() => setLoadError("Couldn't list serial ports on the server."))
+      .finally(() => setLoading(false));
+  };
+
+  const refresh = () => {
+    setLoading(true);
+    fetchPorts();
+  };
+
+  useEffect(fetchPorts, []);
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+        <AutoComplete
+          style={{ flex: 1 }}
+          placeholder={placeholder}
+          status={error ? "error" : undefined}
+          value={value}
+          onChange={onChange}
+          options={ports.map((p) => ({
+            value: p.device,
+            label: p.description && p.description !== "n/a" ? `${p.device} — ${p.description}` : p.device,
+          }))}
+          filterOption={(input, option) =>
+            String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())
+          }
+        />
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={refresh} aria-label="Refresh ports" />
+      </div>
+      {!loading && !loadError && ports.length === 0 && (
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          No serial ports detected on the server. Check the USB connection, or type the path manually.
+        </Text>
+      )}
+      {loadError && (
+        <Text type="warning" style={{ fontSize: 12 }}>
+          {loadError}
+        </Text>
+      )}
+      {error && (
+        <Text type="danger" style={{ fontSize: 12 }}>
+          Please select or enter a serial port.
+        </Text>
+      )}
+    </>
+  );
+};

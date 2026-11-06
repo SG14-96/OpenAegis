@@ -7,8 +7,11 @@
     "connectionSetupSteps": [
         {
             "step": "Connect the IT-100 module to your server via USB.",
-            "details": "Ensure the device is recognized and note the serial port (e.g., /dev/ttyUSB0).",
-            "autoDiscoveryResults": []
+            "details": "Select the serial port the IT-100 is attached to. If it isn't listed, type its path (e.g. /dev/ttyUSB0).",
+            "input": {
+                "type": "serial_port",
+                "placeholder": "e.g. /dev/ttyUSB0"
+            }
         },
         {
             "step": "Configure the serial port settings.",
