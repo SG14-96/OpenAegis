@@ -17,6 +17,7 @@ from crud import crud
 from db import database
 from models.models import User
 import models.settings  # noqa: F401 — register ORM models before any query
+import models.events  # noqa: F401
 
 logging.basicConfig(
     level=logging.INFO,
