@@ -40,7 +40,7 @@
             "step": "Provide the code you would like to use to arm/disarm the system from OpenAegis.",
             "details": "This code will be used for arm/disarm commands sent from OpenAegis. Make sure to use a valid user code that has the necessary permissions on your DSC panel.",
             "input": {
-                "type": "integer",
+                "type": "string",
                 "placeholder": "Enter arm/disarm code"
             }
         },
@@ -50,6 +50,6 @@
         }
     ],
     "dependencies": [
-        "py-dsc-it100>=1.0.0"
+        "py-dsc-it100>=1.1.0"
     ]
 }

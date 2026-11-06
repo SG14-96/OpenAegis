@@ -8,9 +8,12 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING, Callable
 from schema.settings import AlarmPartition, AlarmZone
+from schema.state import AlarmStateSnapshot
 
+from alarm.commands import CommandPayload
 from alarm.events import AlarmEvent
 from alarm.ws_manager import WSManager
+from plugins.exceptions import IllegalCommandError
 
 if TYPE_CHECKING:
     from plugins.AlarmInterface import AlarmInterface
@@ -38,8 +41,9 @@ class AlarmManager:
 
         # Last known full state snapshot, as pushed by the active plugin via an
         # AlarmEvent.STATE_SNAPSHOT message. Served to clients on connect via
-        # GET /api/v1/alarm/state so they don't have to wait for the next event.
-        self._state_snapshot: dict = {"partitions": {}, "zones": {}}
+        # GET /api/v1/alarm/state so they don't have to wait for the next event,
+        # and handed back to the plugin's own is_legal() as its "current state".
+        self._state_snapshot: AlarmStateSnapshot = AlarmStateSnapshot()
 
     # ------------------------------------------------------------------ #
     #  Plugin lifecycle                                                  #
@@ -130,7 +134,7 @@ class AlarmManager:
         self._plugin = None
         self._plugin_name = None
         self._module_path = None
-        self._state_snapshot = {"partitions": {}, "zones": {}}
+        self._state_snapshot = AlarmStateSnapshot()
         logger.info("Plugin unloaded: %s", name)
 
     # ------------------------------------------------------------------ #
@@ -163,25 +167,30 @@ class AlarmManager:
     #  Command dispatch                                                    #
     # ------------------------------------------------------------------ #
 
-    def dispatch_command(self, payload: object) -> None:
+    def dispatch_command(self, payload: CommandPayload) -> None:
         if self._plugin is None:
             raise RuntimeError("No plugin is loaded.")
+
+        legal, reason = self._plugin.is_legal(payload, self._state_snapshot)
+        if not legal:
+            raise IllegalCommandError(payload.command, reason)
+
         self._plugin.receive(self._build_plugin_message(payload))
 
     @staticmethod
-    def _build_plugin_message(payload: object) -> dict:
+    def _build_plugin_message(payload: CommandPayload) -> dict:
         from alarm.commands import AlarmCommand
 
-        msg: dict = {"type": payload.command.value}  # type: ignore[attr-defined]
-        msg["partition"] = payload.partition_id       # type: ignore[attr-defined]
-        if payload.zone_id is not None:               # type: ignore[attr-defined]
-            msg["zone_id"] = payload.zone_id          # type: ignore[attr-defined]
-        if payload.user_code is not None:             # type: ignore[attr-defined]
-            msg["user_code"] = payload.user_code      # type: ignore[attr-defined]
-        if payload.panic_type is not None:            # type: ignore[attr-defined]
-            msg["panic_type"] = payload.panic_type    # type: ignore[attr-defined]
-        if payload.command is AlarmCommand.BYPASS_ZONE:  # type: ignore[attr-defined]
-            msg["bypassed"] = payload.bypassed        # type: ignore[attr-defined]
+        msg: dict = {"type": payload.command.value}
+        msg["partition"] = payload.partition_id
+        if payload.zone_id is not None:
+            msg["zone_id"] = payload.zone_id
+        if payload.user_code is not None:
+            msg["user_code"] = payload.user_code
+        if payload.panic_type is not None:
+            msg["panic_type"] = payload.panic_type
+        if payload.command is AlarmCommand.BYPASS_ZONE:
+            msg["bypassed"] = payload.bypassed
         return msg
 
     # ------------------------------------------------------------------ #
@@ -198,8 +207,8 @@ class AlarmManager:
         return discover_plugins()
 
     @property
-    def state_snapshot(self) -> dict:
-        """Latest {"partitions": {...}, "zones": {...}} reported by the active plugin."""
+    def state_snapshot(self) -> AlarmStateSnapshot:
+        """Latest partitions/zones snapshot reported by the active plugin."""
         return self._state_snapshot
 
     # ------------------------------------------------------------------ #
@@ -219,10 +228,10 @@ class AlarmManager:
     async def _on_plugin_event(self, source: str, msg: dict) -> None:
         logger.info("Event from '%s': %s", source, msg)
         if msg.get("type") == AlarmEvent.STATE_SNAPSHOT:
-            self._state_snapshot = {
+            self._state_snapshot = AlarmStateSnapshot.model_validate({
                 "partitions": msg.get("partitions", {}),
                 "zones": msg.get("zones", {}),
-            }
+            })
         await self._ws.broadcast(json.dumps(msg))
 
     # ------------------------------------------------------------------ #

@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import Callable, Optional
 
+from alarm.commands import CommandPayload
 from schema.PluginManifest import PluginManifest
+from schema.state import AlarmStateSnapshot
 
 
 class AlarmInterface(ABC):
@@ -16,6 +18,14 @@ class AlarmInterface(ABC):
                     on each outgoing message — no polling, no queue.
 
     A message is any JSON-serializable dict with a required "type" key.
+
+    Legality model
+    --------------
+    The panel/hardware is always the final authority on whether a command
+    can execute — plugins never enforce transitions themselves. `is_legal`
+    is purely advisory: it lets a plugin short-circuit a command it already
+    knows the hardware will reject, using the last-known state the host has
+    cached from that same plugin's own `STATE_SNAPSHOT` messages.
     """
 
     def __init__(self) -> None:
@@ -37,6 +47,21 @@ class AlarmInterface(ABC):
 
     def on_unload(self) -> None:
         """Called just before the module is removed from the loader."""
+
+    def is_legal(self, command: CommandPayload, state: AlarmStateSnapshot) -> tuple[bool, Optional[str]]:
+        """
+        Return (True, None) if `command` is legal to send right now, given
+        the host's last-known `state` for this plugin. Return (False, reason)
+        to reject it before it reaches `receive()`.
+
+        Default: no opinion — defer entirely to the hardware. Override this
+        when the plugin knows enough about panel/zone state to catch an
+        obviously-doomed command early (e.g. arming with an open, unbypassed
+        zone). Since `state` can be stale or empty (e.g. right after load,
+        before the first STATE_SNAPSHOT), treat unknown state as permissive
+        rather than rejecting blind.
+        """
+        return True, None
 
     # ------------------------------------------------------------------ #
     #  Communication API                                                   #
