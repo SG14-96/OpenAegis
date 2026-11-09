@@ -11,6 +11,9 @@ from schema import UserModel
 from models import models
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
+# Same scheme, but yields None instead of a 401 when no token is sent — for
+# public routes that reveal a bit more to signed-in users.
+optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", auto_error=False)
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -38,6 +41,21 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if user is None:
         raise credentials_exception
     return user
+
+def get_optional_user(
+    token: str | None = Depends(optional_oauth2_scheme), db: Session = Depends(get_db)
+) -> models.User | None:
+    """The signed-in user if a valid token was sent, otherwise None (never raises)."""
+    if token is None:
+        return None
+    try:
+        payload = jwt.decode(token, security.SECRET_KEY, algorithms=[security.ALGORITHM])
+    except JWTError:
+        return None
+    username = payload.get("sub")
+    if username is None:
+        return None
+    return crud.get_user_by_username(db, username=username)
 
 async def get_current_user_ws(
     websocket: WebSocket,

@@ -51,6 +51,10 @@ class AlarmManager:
         self._state_snapshot: AlarmStateSnapshot = AlarmStateSnapshot()
         self._troubles: set[str] = set()
 
+        # Why the most recent plugin load failed (e.g. the serial device was
+        # missing at boot). Cleared by the next successful load or an unload.
+        self.last_load_error: str | None = None
+
     # ------------------------------------------------------------------ #
     #  Plugin lifecycle                                                  #
     # ------------------------------------------------------------------ #
@@ -61,7 +65,15 @@ class AlarmManager:
                 f"Plugin '{self._plugin_name}' is already loaded. "
                 "Unload it before loading another."
             )
+        try:
+            name = self._load_plugin(module_path, setup_values)
+        except Exception as exc:
+            self.last_load_error = str(exc)
+            raise
+        self.last_load_error = None
+        return name
 
+    def _load_plugin(self, module_path: str, setup_values: dict | None) -> str:
         from pathlib import Path
         from schema.PluginManifest import PluginManifest
 
@@ -142,6 +154,7 @@ class AlarmManager:
         self._module_path = None
         self._state_snapshot = AlarmStateSnapshot()
         self._troubles.clear()
+        self.last_load_error = None
         logger.info("Plugin unloaded: %s", name)
 
     # ------------------------------------------------------------------ #
@@ -169,6 +182,24 @@ class AlarmManager:
             self.load_plugin(module_path, setup_values)
         except Exception as exc:
             logger.error("Startup restore of plugin '%s' failed: %s", plugin_settings.plugin_name, exc)
+
+    def reload_saved_plugin(self, db: Session) -> str:
+        """
+        (Re)load the plugin from the saved alarm configuration — e.g. after
+        plugging the panel back in when the startup restore failed. Raises
+        LookupError if nothing is saved; load errors propagate as from
+        load_plugin (and are kept in last_load_error).
+        """
+        from crud.settings import get_active_plugin_settings
+
+        plugin_settings = get_active_plugin_settings(db)
+        module_path = plugin_settings.data.get("module_path") if plugin_settings else None
+        if not module_path:
+            raise LookupError("No saved alarm configuration to reload.")
+
+        if self._plugin is not None:
+            self.unload_plugin()
+        return self.load_plugin(module_path, plugin_settings.data.get("setup_values"))
 
     # ------------------------------------------------------------------ #
     #  Command dispatch                                                    #

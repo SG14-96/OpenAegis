@@ -11,11 +11,12 @@ from fastapi.staticfiles import StaticFiles
 
 from alarm.manager import AlarmManager
 from alarm.ws_manager import WSManager
-from api.v1 import auth, user, admin, alarm, hardware
+from api.v1 import auth, user, admin, alarm, hardware, setup
 from auth import security
 from crud import crud
 from db import database
 from models.models import User
+from onboarding.setup_code import SetupCode
 import models.settings  # noqa: F401 — register ORM models before any query
 import models.events  # noqa: F401
 
@@ -27,6 +28,9 @@ logging.basicConfig(
 
 # ENV variables:
 APP_IN_DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
+# Seed the dev users below. Defaults to DEV_MODE; set SEED_DEV_USERS=false to
+# exercise the first-run setup flow against an empty database in dev.
+SEED_DEV_USERS = os.getenv("SEED_DEV_USERS", str(APP_IN_DEV_MODE)).lower() == "true"
 
 app = FastAPI()
 
@@ -59,6 +63,7 @@ app.include_router(admin.router, prefix="/api/v1/admin/users", tags=["admin"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(alarm.router, prefix="/api/v1/alarm", tags=["alarm"])
 app.include_router(hardware.router, prefix="/api/v1/hardware", tags=["hardware"])
+app.include_router(setup.router, prefix="/api/v1/setup", tags=["setup"])
 
 
 @app.on_event("startup")
@@ -68,7 +73,7 @@ async def on_startup():
         alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
         command.upgrade(alembic_cfg, "head")
         
-        if APP_IN_DEV_MODE:
+        if SEED_DEV_USERS:
             db = database.SessionLocal()
             dev_users = [
                 {"username": "admin",   "full_name": "Administrator",  "email": "admin@example.com",   "password": "admin123",   "isSuperUser": True},
@@ -96,6 +101,15 @@ async def on_startup():
             db.close()
     except Exception as e:
         print(f"Error during startup: {e}")
+
+    # First run: no users yet, so issue the code that guards first-admin creation.
+    app.state.setup_code = SetupCode()
+    setup_db = database.SessionLocal()
+    try:
+        if setup_db.query(User.id).first() is None:
+            app.state.setup_code.issue()
+    finally:
+        setup_db.close()
 
     # Wire up alarm subsystem
     app.state.ws_manager = WSManager()

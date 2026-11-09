@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from jose import jwt
 from typing import Optional
 import os
+import uuid
 
 SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_ME_REPLACE_WITH_RANDOM_SECRET")
 ALGORITHM = "HS256"
@@ -38,7 +39,10 @@ def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) 
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
+    # jti makes every refresh token unique; without it two logins by the same
+    # user in the same second mint identical tokens and the second insert
+    # violates refresh_tokens.token's unique index.
+    to_encode.update({"exp": expire, "jti": uuid.uuid4().hex})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 

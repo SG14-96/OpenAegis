@@ -162,6 +162,27 @@ async def delete_alarm(
     return {"status": "deleted"}
 
 
+@router.post("/reload")
+async def reload_alarm_plugin(
+    manager: AlarmManager = Depends(_get_manager),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Retry loading the saved plugin, e.g. after reconnecting the panel."""
+    try:
+        plugin_name = manager.reload_saved_plugin(db)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except PluginLoadError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "plugin_load_failed", "plugin": exc.plugin_name, "reason": str(exc.cause)},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"status": "reloaded", "plugin": plugin_name}
+
+
 # ------------------------------------------------------------------ #
 #  Live state                                                          #
 # ------------------------------------------------------------------ #

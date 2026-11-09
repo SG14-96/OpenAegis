@@ -13,17 +13,8 @@ from jose import JWTError
 router = APIRouter()
 
 
-@router.post("/token", response_model=UserModel.Token)
-def login_for_access_token(
-    form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
-):
-    user = crud.authenticate_user(db, form_data.username, form_data.password)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+def issue_token_pair(db: Session, user: User) -> dict:
+    """Mint an access + refresh token for `user`, persisting the refresh token."""
     access_token_expires = timedelta(minutes=security.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = security.create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
@@ -44,6 +35,20 @@ def login_for_access_token(
     # persist refresh token
     crud.create_refresh_token(db, user.id, refresh_token, expires_at)
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+
+
+@router.post("/token", response_model=UserModel.Token)
+def login_for_access_token(
+    form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
+):
+    user = crud.authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return issue_token_pair(db, user)
 
 
 @router.post("/refresh")
